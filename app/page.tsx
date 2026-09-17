@@ -31,6 +31,18 @@ function ChoiceContent({choice,revealed}:{choice:QuizChoice;revealed:boolean}) {
   return <span className="choice-copy"><span className="choice-meaning">{meaning}</span>{revealed&&typeof choice!=='string'&&<span className="choice-details"><strong>{choice.word}</strong>{choice.example&&<span>{choice.example}</span>}</span>}</span>;
 }
 
+function preferredEnglishVoice(voices:SpeechSynthesisVoice[]) {
+  const preferredNames=['natural','neural','google us english','microsoft aria','microsoft jenny','samantha','ava','zira'];
+  return voices.filter(voice=>voice.lang.toLowerCase().startsWith('en')).sort((a,b)=>{
+    const score=(voice:SpeechSynthesisVoice)=>{
+      const language=voice.lang.toLowerCase();
+      const name=voice.name.toLowerCase();
+      return (language==='en-us'?100:language.startsWith('en-us')?90:language.startsWith('en-gb')?70:50)+preferredNames.reduce((total,term,index)=>total+(name.includes(term)?30-index:0),0);
+    };
+    return score(b)-score(a);
+  })[0];
+}
+
 function acceptsSpelling(answer:string, expected:string) {
   const a=answer.trim().toLowerCase();
   const b=expected.trim().toLowerCase();
@@ -136,7 +148,28 @@ export default function Home() {
   function download(){const blob=new Blob([exportCSV(db.words)],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`leaf-vocabulary-${localDate()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice('단어장 CSV를 내보냈습니다.');}
   async function importFile(file?:File){if(!file)return;try{if(file.size>5*1024*1024)throw new Error('5MB 이하의 CSV 파일을 선택해주세요.');setPendingImport(parseCSV(await file.text()));}catch(err){setNotice(err instanceof Error?err.message:'파일을 읽지 못했습니다.');}finally{if(fileRef.current)fileRef.current.value='';}}
   function acceptImport(){if(!pendingImport)return;const seen=new Set(db.words.map(w=>w.word.toLowerCase()));const additions=pendingImport.words.filter(w=>{const key=w.word.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;});if(commit({...db,words:[...additions,...db.words]})){setNotice(`${additions.length}개 단어를 가져왔습니다. ${pendingImport.words.length-additions.length+pendingImport.skipped}개 중복·빈 행은 건너뛰었습니다.`);closeModal();}}
-  function speak(word:string){if(!('speechSynthesis' in window)){setNotice('이 브라우저는 발음을 지원하지 않습니다.');return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(word);utterance.lang='en-US';utterance.rate=.85;window.speechSynthesis.speak(utterance);}
+  function speak(word:string){
+    if(!('speechSynthesis' in window)){setNotice('이 브라우저는 발음을 지원하지 않습니다.');return;}
+    const synthesis=window.speechSynthesis;
+    synthesis.cancel();
+    let played=false;
+    let fallback=0;
+    const play=()=>{
+      if(played)return;
+      played=true;
+      window.clearTimeout(fallback);
+      synthesis.removeEventListener('voiceschanged',play);
+      const utterance=new SpeechSynthesisUtterance(word);
+      const voice=preferredEnglishVoice(synthesis.getVoices());
+      if(voice){utterance.voice=voice;utterance.lang=voice.lang;}
+      else utterance.lang='en-US';
+      utterance.rate=.92;
+      utterance.pitch=1;
+      synthesis.speak(utterance);
+    };
+    if(synthesis.getVoices().length)play();
+    else{synthesis.addEventListener('voiceschanged',play,{once:true});fallback=window.setTimeout(play,600);}
+  }
   function startQuiz(mode:Mode,retryWords?:Word[]){let pool=retryWords??(scope==='due'?due:scope==='wrong'?wrongWords:scope==='favorite'?db.words.filter(w=>w.favorite):db.words);if(!retryWords&&scope==='due'&&!pool.length&&db.words.length){pool=db.words;setScope('all');setNotice('오늘 복습을 완료해서 모든 단어로 다시 학습합니다.');}if(!pool.length){setNotice(scope==='favorite'?'즐겨찾기한 단어가 없습니다.':scope==='wrong'?'다시 학습할 틀린 단어가 없습니다.':'저장한 단어가 없습니다.');return;}const limit=retryWords?.length??(quizSize==='all'?pool.length:Number(quizSize));const words=shuffle(pool).slice(0,limit);if(mode==='choice'&&new Set(db.words.map(w=>w.meaning)).size<2){setNotice('객관식 퀴즈에는 서로 다른 의미의 단어가 2개 이상 필요합니다.');return;}setQuiz({mode,words,index:0,correct:0,incorrectIds:[],choices:words.map(w=>makeChoices(w,db.words))});setAnswer('');setAcceptedTypo(false);setRevealed(false);setGraded(null);busyGrade.current=false;}
   function grade(correct:boolean){if(!quiz||graded!==null||busyGrade.current)return;busyGrade.current=true;const word=quiz.words[quiz.index];const current=dbRef.current;const latest=current.words.find(w=>w.id===word.id);if(!latest){setQuiz(null);busyGrade.current=false;return;}if(commit({...current,words:current.words.map(w=>w.id===word.id?schedule(w,correct):w),reviews:[...current.reviews,{date:localDate(),correct,wordId:word.id}]})){setGraded(correct);setRevealed(true);setQuiz({...quiz,correct:quiz.correct+(correct?1:0),incorrectIds:correct?(quiz.incorrectIds??[]):[...(quiz.incorrectIds??[]),word.id]});}else busyGrade.current=false;}
   function nextQuestion(){if(!quiz)return;setQuiz({...quiz,index:quiz.index+1});setGraded(null);setAnswer('');setAcceptedTypo(false);setRevealed(false);busyGrade.current=false;}
