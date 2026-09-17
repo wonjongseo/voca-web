@@ -1,8 +1,10 @@
 import Papa from 'papaparse';
 
+export type Example = { text: string; translation: string };
 export type Word = {
   id: string; word: string; meaning: string; example: string; translation: string;
   synonyms: string; memo: string; favorite: boolean; level: number; due: number; created: number;
+  examples?: Example[]; synonymEntries?: string[];
 };
 export type Review = { date: string; correct: boolean; wordId: string };
 export type Database = { version: 1; words: Word[]; reviews: Review[] };
@@ -10,6 +12,20 @@ export const STORAGE_KEY = 'leaf-vocabulary-v1';
 export const DAY = 86400000;
 export const localDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 export const blankWord = (): Word => ({id: crypto.randomUUID(), word:'', meaning:'', example:'', translation:'', synonyms:'', memo:'', favorite:false, level:0, due:0, created:Date.now()});
+// Old notebooks keep their original fields until the word is edited.
+export const getExamples = (word: Word): Example[] => word.examples ?? (word.example || word.translation ? [{text:word.example,translation:word.translation}] : []);
+export const getSynonyms = (word: Word): string[] => word.synonymEntries ?? word.synonyms.split(/[,;\n]/).map(s=>s.trim()).filter(Boolean);
+export function withExamples(word: Word, examples: Example[]): Word {
+  return {...word, examples, example:examples[0]?.text ?? '', translation:examples[0]?.translation ?? ''};
+}
+export function withSynonyms(word: Word, synonymEntries: string[]): Word {
+  return {...word, synonymEntries, synonyms:synonymEntries.join(', ')};
+}
+export function cleanEntries(word: Word): Word {
+  return withSynonyms(withExamples(word,getExamples(word).map(e=>({text:e.text.trim(),translation:e.translation.trim()})).filter(e=>e.text || e.translation)), getSynonyms(word).map(s=>s.trim()).filter(Boolean));
+}
+const validExamples = (value: unknown): value is Example[] => Array.isArray(value) && value.every(e=>e && typeof e.text === 'string' && typeof e.translation === 'string');
+const validSynonyms = (value: unknown): value is string[] => Array.isArray(value) && value.every(s=>typeof s === 'string');
 export function schedule(word: Word, correct: boolean, now = Date.now()): Word {
   const level = correct ? Math.min(word.level + 1, 6) : 0;
   return {...word, level, due: now + (correct ? [0,1,3,7,14,30,60][level] * DAY : 10 * 60000)};
@@ -17,7 +33,7 @@ export function schedule(word: Word, correct: boolean, now = Date.now()): Word {
 export function validWord(value: unknown): value is Word {
   if (!value || typeof value !== 'object') return false;
   const w = value as Word;
-  return ['id','word','meaning','example','translation','synonyms','memo'].every(k => typeof w[k as keyof Word] === 'string') && !!w.word.trim() && !!w.meaning.trim() && typeof w.favorite === 'boolean' && Number.isInteger(w.level) && w.level >= 0 && w.level <= 6 && Number.isFinite(w.due) && Number.isFinite(w.created);
+  return ['id','word','meaning','example','translation','synonyms','memo'].every(k => typeof w[k as keyof Word] === 'string') && !!w.word.trim() && !!w.meaning.trim() && typeof w.favorite === 'boolean' && Number.isInteger(w.level) && w.level >= 0 && w.level <= 6 && Number.isFinite(w.due) && Number.isFinite(w.created) && (w.examples === undefined || validExamples(w.examples)) && (w.synonymEntries === undefined || validSynonyms(w.synonymEntries));
 }
 export function loadDatabase(raw: string): Database {
   const data = JSON.parse(raw);
@@ -35,6 +51,18 @@ export function parseCSV(csv: string): {words: Word[]; skipped: number} {
     if(!row.word?.trim() || !row.meaning?.trim()){skipped++; return [];}
     const word = blankWord();
     for(const key of ['word','meaning','example','translation','synonyms','memo'] as const) word[key] = (row[key] || '').trim();
+    if(row.examples_json?.trim()) {
+      let entries: unknown;
+      try {entries=JSON.parse(row.examples_json);} catch {throw new Error(`${word.word}: 예문 목록의 JSON 형식이 올바르지 않습니다.`);}
+      if(!validExamples(entries)) throw new Error(`${word.word}: 예문에는 text와 translation 문자열이 필요합니다.`);
+      Object.assign(word,withExamples(word,entries));
+    }
+    if(row.synonyms_json?.trim()) {
+      let entries: unknown;
+      try {entries=JSON.parse(row.synonyms_json);} catch {throw new Error(`${word.word}: 유의어 목록의 JSON 형식이 올바르지 않습니다.`);}
+      if(!validSynonyms(entries)) throw new Error(`${word.word}: 유의어 목록에는 문자열만 사용할 수 있습니다.`);
+      Object.assign(word,withSynonyms(word,entries));
+    }
     word.favorite = row.favorite === 'true';
     const level = Number(row.level);
     word.level = Number.isInteger(level) && level >= 0 && level <= 6 ? level : 0;
@@ -45,7 +73,7 @@ export function parseCSV(csv: string): {words: Word[]; skipped: number} {
   if(!words.length) throw new Error('가져올 단어가 없습니다. 단어와 의미를 확인해주세요.');
   return {words, skipped};
 }
-export const exportCSV = (words: Word[]) => '\uFEFF' + Papa.unparse(words.map(w => Object.fromEntries(fields.map(f => [f,w[f]]))), {columns:[...fields], escapeFormulae:true});
+export const exportCSV = (words: Word[]) => '\uFEFF' + Papa.unparse(words.map(w => ({...Object.fromEntries(fields.map(f => [f,w[f]])), examples_json:JSON.stringify(getExamples(w)), synonyms_json:JSON.stringify(getSynonyms(w))})), {columns:[...fields,'examples_json','synonyms_json'], escapeFormulae:true});
 export function shuffle<T>(items: T[]): T[] {
   const result = [...items];
   for(let i=result.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [result[i],result[j]]=[result[j],result[i]];}

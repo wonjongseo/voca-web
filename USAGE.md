@@ -19,6 +19,10 @@ npm run typecheck
 npm run build
 ```
 
+## Multiple examples and synonyms
+
+Use the add buttons in the word editor to register multiple examples (each with its own translation) and synonyms. Each entry can be edited or removed separately. Word details and flashcards show all examples. Existing saved words and old CSV files remain readable. New CSV exports add `examples_json` and `synonyms_json` columns to preserve all entries, including quotes, commas and line breaks. These columns take precedence over the legacy single-value columns when importing.
+
 ## Data
 
 Words and quiz history are saved to this browser's localStorage. They persist across browser restarts. Different devices, browsers, and site origins have separate storage. Clearing site data removes this notebook. CSV export backs up words and review scheduling, but not the event history. Export regularly before moving or clearing browser data.
