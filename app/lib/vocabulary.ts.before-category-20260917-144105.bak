@@ -5,14 +5,13 @@ export type Word = {
   id: string; word: string; meaning: string; example: string; translation: string;
   synonyms: string; memo: string; favorite: boolean; level: number; due: number; created: number;
   examples?: Example[]; synonymEntries?: string[]; meaningEntries?: string[];
-  category?: string; // CATEGORY_FEATURE_V3
 };
 export type Review = { date: string; correct: boolean; wordId: string };
-export type Database = { version: 1; words: Word[]; reviews: Review[]; categories?: string[] };
+export type Database = { version: 1; words: Word[]; reviews: Review[] };
 export const STORAGE_KEY = 'leaf-vocabulary-v1';
 export const DAY = 86400000;
 export const localDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-export const blankWord = (): Word => ({id: crypto.randomUUID(), word:'', meaning:'', example:'', translation:'', synonyms:'', memo:'', category:'', favorite:false, level:0, due:0, created:Date.now()});
+export const blankWord = (): Word => ({id: crypto.randomUUID(), word:'', meaning:'', example:'', translation:'', synonyms:'', memo:'', favorite:false, level:0, due:0, created:Date.now()});
 // Old notebooks keep their original fields until the word is edited.
 export const getMeanings = (word: Word): string[] => word.meaningEntries ?? (word.meaning ? [word.meaning] : []);
 export function withMeanings(word: Word, meaningEntries: string[]): Word {
@@ -38,17 +37,15 @@ export function schedule(word: Word, correct: boolean, now = Date.now()): Word {
 export function validWord(value: unknown): value is Word {
   if (!value || typeof value !== 'object') return false;
   const w = value as Word;
-  return ['id','word','meaning','example','translation','synonyms','memo'].every(k => typeof w[k as keyof Word] === 'string') && !!w.word.trim() && !!w.meaning.trim() && (w.category === undefined || typeof w.category === 'string') && typeof w.favorite === 'boolean' && Number.isInteger(w.level) && w.level >= 0 && w.level <= 6 && Number.isFinite(w.due) && Number.isFinite(w.created) && (w.examples === undefined || validExamples(w.examples)) && (w.synonymEntries === undefined || validSynonyms(w.synonymEntries)) && (w.meaningEntries === undefined || (validSynonyms(w.meaningEntries) && w.meaningEntries.length > 0 && w.meaningEntries.every(s=>!!s.trim()) && w.meaning === w.meaningEntries.join('; ')));
+  return ['id','word','meaning','example','translation','synonyms','memo'].every(k => typeof w[k as keyof Word] === 'string') && !!w.word.trim() && !!w.meaning.trim() && typeof w.favorite === 'boolean' && Number.isInteger(w.level) && w.level >= 0 && w.level <= 6 && Number.isFinite(w.due) && Number.isFinite(w.created) && (w.examples === undefined || validExamples(w.examples)) && (w.synonymEntries === undefined || validSynonyms(w.synonymEntries)) && (w.meaningEntries === undefined || (validSynonyms(w.meaningEntries) && w.meaningEntries.length > 0 && w.meaningEntries.every(s=>!!s.trim()) && w.meaning === w.meaningEntries.join('; ')));
 }
 export function loadDatabase(raw: string): Database {
   const data = JSON.parse(raw);
-  if(data.version !== 1 || !Array.isArray(data.words) || !data.words.every(validWord) || new Set(data.words.map((w: Word)=>w.id)).size !== data.words.length || !Array.isArray(data.reviews) || !data.reviews.every((r: Review)=>r && typeof r.date === 'string' && typeof r.correct === 'boolean' && typeof r.wordId === 'string') || (data.categories !== undefined && (!Array.isArray(data.categories) || !data.categories.every((c: unknown)=>typeof c === 'string')))) throw new Error('저장된 데이터를 읽지 못했습니다. 원본 데이터를 보존하기 위해 저장을 중지했습니다.');
-  const storedCategories:string[]=Array.isArray(data.categories)?data.categories:[];
-  const categories=[...new Set([...storedCategories,...data.words.map((w: Word)=>(w.category??'').trim()).filter(Boolean)])];
-  return {...data,categories};
+  if(data.version !== 1 || !Array.isArray(data.words) || !data.words.every(validWord) || new Set(data.words.map((w: Word)=>w.id)).size !== data.words.length || !Array.isArray(data.reviews) || !data.reviews.every((r: Review)=>r && typeof r.date === 'string' && typeof r.correct === 'boolean' && typeof r.wordId === 'string')) throw new Error('저장된 데이터를 읽지 못했습니다. 원본 데이터를 보존하기 위해 저장을 중지했습니다.');
+  return data;
 }
-const fields = ['word','meaning','example','translation','synonyms','memo','category','favorite','level','due','created'] as const;
-const aliases: Record<string,string> = {'영단어':'word','단어':'word','의미':'meaning','뜻':'meaning','예시':'example','예문':'example','예시 뜻':'translation','예문 뜻':'translation','유의어':'synonyms','메모':'memo','카테고리':'category','분류':'category','즐겨찾기':'favorite'};
+const fields = ['word','meaning','example','translation','synonyms','memo','favorite','level','due','created'] as const;
+const aliases: Record<string,string> = {'영단어':'word','단어':'word','의미':'meaning','뜻':'meaning','예시':'example','예문':'example','예시 뜻':'translation','예문 뜻':'translation','유의어':'synonyms','메모':'memo','즐겨찾기':'favorite'};
 export function parseCSV(csv: string): {words: Word[]; skipped: number} {
   const parsed = Papa.parse<Record<string,string>>(csv.replace(/^\uFEFF/,''), {header:true, skipEmptyLines:'greedy', transformHeader: h => aliases[h.trim()] || h.trim().toLowerCase()});
   if(parsed.errors.length) throw new Error(`CSV 형식을 확인해주세요: ${parsed.errors[0].message}`);
@@ -57,7 +54,7 @@ export function parseCSV(csv: string): {words: Word[]; skipped: number} {
   const words = parsed.data.flatMap(row => {
     if(!row.word?.trim() || !row.meaning?.trim()){skipped++; return [];}
     const word = blankWord();
-    for(const key of ['word','meaning','example','translation','synonyms','memo','category'] as const) word[key] = (row[key] || '').trim();
+    for(const key of ['word','meaning','example','translation','synonyms','memo'] as const) word[key] = (row[key] || '').trim();
     if(row.examples_json?.trim()) {
       let entries: unknown;
       try {entries=JSON.parse(row.examples_json);} catch {throw new Error(`${word.word}: 예문 목록의 JSON 형식이 올바르지 않습니다.`);}
