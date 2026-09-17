@@ -128,17 +128,8 @@ function acceptsSpelling(answer:string, expected:string) {
 
 // TYPING_EQUIVALENT_MEANING_ANSWER_V1
 // QUIZ_MID_REVIEW_UPGRADE_V1
-// REORDERED_COMMA_MEANINGS_V1
 function normalizeMeaningAnswer(value:string) {
-  // 한 의미 항목 안에서 쉼표로 나열된 표현은 순서가 달라도 같은 답으로 봅니다.
-  // 예: "독점적인, 배타적인" === "배타적인, 독점적인"
-  // 단, "제공하다" !== "제공하다, 제안하다"
-  return value
-    .split(/[,，]/)
-    .map(part=>part.trim().replace(/\s+/g,' ').toLocaleLowerCase())
-    .filter(Boolean)
-    .sort((a,b)=>a.localeCompare(b,'ko'))
-    .join('||');
+  return value.trim().replace(/\s+/g,' ').toLocaleLowerCase();
 }
 
 function answersMatchAllMeanings(answers:string[],meanings:string[]) {
