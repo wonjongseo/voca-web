@@ -8,7 +8,7 @@ import {cleanEntries, getExamples, getSynonyms, blankWord, demoWords, exportCSV,
 import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from './word-entries';
 
 type Mode = 'flash'|'choice'|'typing';
-type QuizChoice = string|{meaning:string;word:string;example:string};
+type QuizChoice = string|{meaning:string;word:string;example:string;translation?:string};
 type Session = {mode: Mode; words: Word[]; index: number; correct: number; incorrectIds?: string[]; choices: QuizChoice[][]};
 const modes = [{id:'flash' as const,name:'플래시카드',desc:'단어를 떠올리고, 카드를 뒤집어 확인해요.',icon:Layers},{id:'choice' as const,name:'객관식 퀴즈',desc:'단어에 맞는 의미를 골라보세요.',icon:CircleHelp},{id:'typing' as const,name:'철자 입력',desc:'의미를 보고 영어 단어를 완성해요.',icon:Pencil}];
 const emptyDB: Database = {version:1, words:[], reviews:[]};
@@ -23,12 +23,12 @@ function makeChoices(target:Word,words:Word[]):QuizChoice[] {
     meanings.add(word.meaning);
     if(selected.length===4)break;
   }
-  return shuffle(selected.map(word=>({meaning:word.meaning,word:word.word,example:getExamples(word)[0]?.text??''})));
+  return shuffle(selected.map(word=>{const example=getExamples(word)[0];return {meaning:word.meaning,word:word.word,example:example?.text??'',translation:example?.translation??''};}));
 }
 
 function ChoiceContent({choice,revealed}:{choice:QuizChoice;revealed:boolean}) {
   const meaning=choiceMeaning(choice);
-  return <span className="choice-copy"><span className="choice-meaning">{meaning}</span>{revealed&&typeof choice!=='string'&&<span className="choice-details"><strong>{choice.word}</strong>{choice.example&&<span>{choice.example}</span>}</span>}</span>;
+  return <span className="choice-copy"><span className="choice-meaning">{meaning}</span>{revealed&&typeof choice!=='string'&&<span className="choice-details"><strong>{choice.word}</strong>{choice.example&&<span>{choice.example}</span>}{choice.translation&&<span className="choice-translation">{choice.translation}</span>}</span>}</span>;
 }
 
 function preferredEnglishVoice(voices:SpeechSynthesisVoice[]) {
