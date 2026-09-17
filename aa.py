@@ -1,250 +1,292 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-voca-web 오답노트 기능 패치
-
-사용법:
-  1) 이 파일을 voca-web 프로젝트 루트(package.json이 있는 위치)에 둡니다.
-  2) 실행:
-       python add_wrong_note.py
-     또는 Windows:
-       py add_wrong_note.py
-  3) 확인:
-       npm run build
-       npm run dev
-
-수정 파일:
-  - app/page.tsx
-  - app/globals.css
+voca-web 카테고리 기능 패치
 
 기능:
-  - 사이드바에 "오답노트" 메뉴 추가
-  - 기존 reviews 기록에서 한 번 이상 틀린 단어 자동 집계
-  - 단어별 오답 횟수 / 정답 횟수 / 정답률 / 최근 오답일 표시
-  - 오답 단어만 다시 학습 가능
-  - 오늘의 학습 범위에 "오답노트" 추가
+- 단어 등록/수정 시 카테고리 선택
+- 카테고리 생성 / 이름 변경 / 삭제
+- 단어장 카테고리 필터
+- 단어 카드 / 상세 화면 카테고리 표시
+- 학습 범위에서 특정 카테고리 선택
+- CSV category 열 가져오기/내보내기
+- 기존 LocalStorage 데이터와 하위 호환
 
-주의:
-  - DB 스키마/LocalStorage 형식은 변경하지 않습니다.
-  - 실행 전 원본 파일의 timestamp 백업을 자동 생성합니다.
+사용:
+  py add_categories.py
+또는
+  python add_categories.py
+
+확인:
+  npm run build
+  npm run dev
 """
 
 from __future__ import annotations
-
 from datetime import datetime
 from pathlib import Path
 import shutil
 import sys
 
+MARKER = "CATEGORY_FEATURE_V1"
 
-MARKER = "WRONG_NOTE_FEATURE_V1"
 
-
-def fail(message: str) -> None:
+def die(message: str) -> None:
     print(f"\n[ERROR] {message}")
     sys.exit(1)
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
+def replace_once(text: str, old: str, new: str, label: str, required: bool = True):
     count = text.count(old)
-    if count != 1:
-        fail(
-            f"{label} 수정 지점을 찾지 못했습니다. "
-            f"(예상 1개, 실제 {count}개)\n"
-            "GitHub 최신 코드와 현재 로컬 코드가 달라졌을 가능성이 있습니다."
-        )
-    return text.replace(old, new, 1)
+    if count == 1:
+        return text.replace(old, new, 1), True
+    if required:
+        die(f"{label} 수정 지점을 찾지 못했습니다. (예상 1개, 실제 {count}개)\n현재 로컬 코드가 최신 main과 많이 달라졌을 수 있습니다.")
+    return text, False
 
 
-def backup_file(path: Path, stamp: str) -> Path:
-    backup = path.with_name(f"{path.name}.before-wrong-note-{stamp}.bak")
-    shutil.copy2(path, backup)
-    return backup
+def backup(path: Path, stamp: str) -> Path:
+    out = path.with_name(f"{path.name}.before-category-{stamp}.bak")
+    shutil.copy2(path, out)
+    return out
+
+
+def patch_vocabulary(text: str) -> str:
+    if MARKER in text:
+        return text
+
+    text, _ = replace_once(
+        text,
+        """  examples?: Example[]; synonymEntries?: string[]; meaningEntries?: string[];\n};""",
+        f"""  examples?: Example[]; synonymEntries?: string[]; meaningEntries?: string[];\n  category?: string; // {MARKER}\n}};""",
+        "Word.category",
+    )
+    text, _ = replace_once(
+        text,
+        "export type Database = { version: 1; words: Word[]; reviews: Review[] };",
+        "export type Database = { version: 1; words: Word[]; reviews: Review[]; categories?: string[] };",
+        "Database.categories",
+    )
+    text, _ = replace_once(
+        text,
+        "export const blankWord = (): Word => ({id: crypto.randomUUID(), word:'', meaning:'', example:'', translation:'', synonyms:'', memo:'', favorite:false, level:0, due:0, created:Date.now()});",
+        "export const blankWord = (): Word => ({id: crypto.randomUUID(), word:'', meaning:'', example:'', translation:'', synonyms:'', memo:'', category:'', favorite:false, level:0, due:0, created:Date.now()});",
+        "blankWord category",
+    )
+
+    old = "&& (w.examples === undefined || validExamples(w.examples)) && (w.synonymEntries === undefined || validSynonyms(w.synonymEntries)) && (w.meaningEntries === undefined || (validSynonyms(w.meaningEntries) && w.meaningEntries.length > 0 && w.meaningEntries.every(s=>!!s.trim()) && w.meaning === w.meaningEntries.join('; ')));"
+    new = "&& (w.category === undefined || typeof w.category === 'string') && (w.examples === undefined || validExamples(w.examples)) && (w.synonymEntries === undefined || validSynonyms(w.synonymEntries)) && (w.meaningEntries === undefined || (validSynonyms(w.meaningEntries) && w.meaningEntries.length > 0 && w.meaningEntries.every(s=>!!s.trim()) && w.meaning === w.meaningEntries.join('; ')));"
+    text, _ = replace_once(text, old, new, "validWord category")
+
+    old = """  if(data.version !== 1 || !Array.isArray(data.words) || !data.words.every(validWord) || new Set(data.words.map((w: Word)=>w.id)).size !== data.words.length || !Array.isArray(data.reviews) || !data.reviews.every((r: Review)=>r && typeof r.date === 'string' && typeof r.correct === 'boolean' && typeof r.wordId === 'string')) throw new Error('저장된 데이터를 읽지 못했습니다. 원본 데이터를 보존하기 위해 저장을 중지했습니다.');\n  return data;"""
+    new = """  if(data.version !== 1 || !Array.isArray(data.words) || !data.words.every(validWord) || new Set(data.words.map((w: Word)=>w.id)).size !== data.words.length || !Array.isArray(data.reviews) || !data.reviews.every((r: Review)=>r && typeof r.date === 'string' && typeof r.correct === 'boolean' && typeof r.wordId === 'string') || (data.categories !== undefined && (!Array.isArray(data.categories) || !data.categories.every((c: unknown)=>typeof c === 'string')))) throw new Error('저장된 데이터를 읽지 못했습니다. 원본 데이터를 보존하기 위해 저장을 중지했습니다.');\n  const categories=[...new Set([...(data.categories ?? []),...data.words.map((w: Word)=>w.category ?? '').filter(Boolean)])];\n  return {...data,categories};"""
+    text, _ = replace_once(text, old, new, "loadDatabase categories")
+
+    text, _ = replace_once(
+        text,
+        "const fields = ['word','meaning','example','translation','synonyms','memo','favorite','level','due','created'] as const;",
+        "const fields = ['word','meaning','example','translation','synonyms','memo','category','favorite','level','due','created'] as const;",
+        "CSV fields",
+    )
+    text, _ = replace_once(
+        text,
+        "'유의어':'synonyms','메모':'memo','즐겨찾기':'favorite'};",
+        "'유의어':'synonyms','메모':'memo','카테고리':'category','분류':'category','즐겨찾기':'favorite'};",
+        "CSV aliases",
+    )
+    text, _ = replace_once(
+        text,
+        "for(const key of ['word','meaning','example','translation','synonyms','memo'] as const) word[key] = (row[key] || '').trim();",
+        "for(const key of ['word','meaning','example','translation','synonyms','memo','category'] as const) word[key] = (row[key] || '').trim();",
+        "CSV category parse",
+    )
+    return text
+
+
+def patch_page(text: str) -> str:
+    if MARKER in text:
+        return text
+
+    text, _ = replace_once(text, "const emptyDB: Database = {version:1, words:[], reviews:[]};", "const emptyDB: Database = {version:1, words:[], reviews:[], categories:[]};", "emptyDB")
+    text, _ = replace_once(text, "  const [filter,setFilter] = useState('all');\n  const [sort,setSort] = useState('new');", f"  const [filter,setFilter] = useState('all');\n  const [categoryFilter,setCategoryFilter] = useState('all'); // {MARKER}\n  const [sort,setSort] = useState('new');", "categoryFilter state")
+    text, _ = replace_once(text, "  const [pendingImport,setPendingImport] = useState<{words:Word[];skipped:number}|null>(null);\n  const [quiz,setQuiz] = useState<Session|null>(null);", "  const [pendingImport,setPendingImport] = useState<{words:Word[];skipped:number}|null>(null);\n  const [categoryManager,setCategoryManager] = useState(false);\n  const [newCategory,setNewCategory] = useState('');\n  const [quiz,setQuiz] = useState<Session|null>(null);", "category manager state")
+
+    text, _ = replace_once(text, "setDeleteId('');setPendingImport(null);setNotice('다른 탭의 변경사항을 불러왔습니다.');", "setDeleteId('');setPendingImport(null);setCategoryManager(false);setNotice('다른 탭의 변경사항을 불러왔습니다.');", "storage listener")
+    text, _ = replace_once(text, "  const modalOpen=!!(editor||detail||deleteId||pendingImport);", "  const modalOpen=!!(editor||detail||deleteId||pendingImport||categoryManager);", "modalOpen")
+
+    text, _ = replace_once(text, "  const wrongWords=db.words.filter(w=>latestResults.get(w.id)===false);\n  const today=db.reviews.filter(r=>r.date===localDate());", "  const wrongWords=db.words.filter(w=>latestResults.get(w.id)===false);\n  const categoryNames=[...new Set([...(db.categories??[]),...db.words.map(w=>(w.category??'').trim()).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'ko'));\n  const today=db.reviews.filter(r=>r.date===localDate());", "categoryNames")
+
+    old_filtered = "  const filtered=db.words.filter(w=>(filter==='all'||filter==='favorite'&&w.favorite||filter==='due'&&w.due<=now||filter==='mastered'&&w.level>=4)&&`${w.word} ${w.meaning} ${getSynonyms(w).join(' ')} ${w.memo}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>sort==='az'?a.word.localeCompare(b.word):sort==='due'?a.due-b.due:b.created-a.created);"
+    new_filtered = "  const filtered=db.words.filter(w=>(filter==='all'||filter==='favorite'&&w.favorite||filter==='due'&&w.due<=now||filter==='mastered'&&w.level>=4)&&(categoryFilter==='all'||(w.category??'')===categoryFilter)&&`${w.word} ${w.meaning} ${getSynonyms(w).join(' ')} ${w.memo} ${w.category??''}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>sort==='az'?a.word.localeCompare(b.word):sort==='due'?a.due-b.due:b.created-a.created);"
+    text, _ = replace_once(text, old_filtered, new_filtered, "filtered")
+
+    text, _ = replace_once(text, "  function closeModal(){setEditor(null);setDetail(null);setDeleteId('');setPendingImport(null);}", "  function closeModal(){setEditor(null);setDetail(null);setDeleteId('');setPendingImport(null);setCategoryManager(false);setNewCategory('');}", "closeModal")
+
+    functions = r'''  function addCategory(){
+    const name=newCategory.trim();
+    if(!name){setNotice('카테고리 이름을 입력해주세요.');return;}
+    if(categoryNames.some(category=>category.toLowerCase()===name.toLowerCase())){setNotice('이미 같은 이름의 카테고리가 있습니다.');return;}
+    if(commit({...db,categories:[...categoryNames,name]})){setNewCategory('');setNotice(`‘${name}’ 카테고리를 추가했습니다.`);}
+  }
+  function renameCategory(name:string){
+    const next=window.prompt('새 카테고리 이름을 입력해주세요.',name)?.trim();
+    if(!next||next===name)return;
+    if(categoryNames.some(category=>category!==name&&category.toLowerCase()===next.toLowerCase())){setNotice('이미 같은 이름의 카테고리가 있습니다.');return;}
+    if(commit({...db,categories:categoryNames.map(category=>category===name?next:category),words:db.words.map(word=>(word.category??'')===name?{...word,category:next}:word)})){
+      if(categoryFilter===name)setCategoryFilter(next);
+      if(scope===`category:${name}`)setScope(`category:${next}`);
+      setNotice(`카테고리 이름을 ‘${next}’(으)로 변경했습니다.`);
+    }
+  }
+  function deleteCategory(name:string){
+    if(!window.confirm(`‘${name}’ 카테고리를 삭제할까요?\n단어는 삭제되지 않고 카테고리만 해제됩니다.`))return;
+    if(commit({...db,categories:categoryNames.filter(category=>category!==name),words:db.words.map(word=>(word.category??'')===name?{...word,category:''}:word)})){
+      if(categoryFilter===name)setCategoryFilter('all');
+      if(scope===`category:${name}`)setScope('all');
+      setNotice(`‘${name}’ 카테고리를 삭제했습니다. 단어는 그대로 유지됩니다.`);
+    }
+  }
+'''
+    if "  function saveWord(event:React.FormEvent<HTMLFormElement>){" not in text:
+        die("카테고리 관리 함수를 삽입할 위치를 찾지 못했습니다.")
+    text = text.replace("  function saveWord(event:React.FormEvent<HTMLFormElement>){", functions + "  function saveWord(event:React.FormEvent<HTMLFormElement>){", 1)
+
+    text, _ = replace_once(text, "    const next=cleanEntries({...editor,word:editor.word.trim(),meaning:editor.meaning.trim()});", "    const next=cleanEntries({...editor,word:editor.word.trim(),meaning:editor.meaning.trim(),category:(editor.category??'').trim()});", "saveWord trim")
+    text, _ = replace_once(text, "    if(commit({...db,words:exists?db.words.map(w=>w.id===next.id?next:w):[next,...db.words]})){", "    const categories=next.category&&!categoryNames.includes(next.category)?[...categoryNames,next.category]:categoryNames;\n    if(commit({...db,categories,words:exists?db.words.map(w=>w.id===next.id?next:w):[next,...db.words]})){", "saveWord persist")
+
+    old_import = "  function acceptImport(){if(!pendingImport)return;const seen=new Set(db.words.map(w=>w.word.toLowerCase()));const additions=pendingImport.words.filter(w=>{const key=w.word.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;});if(commit({...db,words:[...additions,...db.words]})){setNotice(`${additions.length}개 단어를 가져왔습니다. ${pendingImport.words.length-additions.length+pendingImport.skipped}개 중복·빈 행은 건너뛰었습니다.`);closeModal();}}"
+    new_import = "  function acceptImport(){if(!pendingImport)return;const seen=new Set(db.words.map(w=>w.word.toLowerCase()));const additions=pendingImport.words.filter(w=>{const key=w.word.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;});const importedCategories=additions.map(w=>(w.category??'').trim()).filter(Boolean);const categories=[...new Set([...categoryNames,...importedCategories])];if(commit({...db,categories,words:[...additions,...db.words]})){setNotice(`${additions.length}개 단어를 가져왔습니다. ${pendingImport.words.length-additions.length+pendingImport.skipped}개 중복·빈 행은 건너뛰었습니다.`);closeModal();}}"
+    text, _ = replace_once(text, old_import, new_import, "acceptImport")
+
+    old_pool = "let pool=retryWords??(scope==='due'?due:scope==='wrong'?wrongWords:scope==='favorite'?db.words.filter(w=>w.favorite):db.words);"
+    new_pool = "let pool=retryWords??(scope==='due'?due:scope==='wrong'?wrongWords:scope==='favorite'?db.words.filter(w=>w.favorite):scope.startsWith('category:')?db.words.filter(w=>(w.category??'')===scope.slice('category:'.length)):db.words);"
+    if old_pool in text:
+        text = text.replace(old_pool, new_pool, 1)
+    elif "scope.startsWith('category:')" not in text:
+        die("startQuiz 학습 범위 로직을 찾지 못했습니다.")
+
+    old_notice = "scope==='wrong'?'다시 학습할 틀린 단어가 없습니다.':'저장한 단어가 없습니다.'"
+    new_notice = "scope==='wrong'?'다시 학습할 틀린 단어가 없습니다.':scope.startsWith('category:')?'선택한 카테고리에 단어가 없습니다.':'저장한 단어가 없습니다.'"
+    if old_notice in text:
+        text = text.replace(old_notice, new_notice, 1)
+
+    old_actions = "<button className=\"button text-button\" disabled={!ready||!!storageError} onClick={()=>fileRef.current?.click()}><FileUp size={16}/>CSV 가져오기</button><button className=\"button text-button\" disabled={!db.words.length} onClick={download}><ArrowDownToLine size={16}/>내보내기</button>"
+    new_actions = "<button className=\"button text-button\" onClick={()=>setCategoryManager(true)} disabled={!ready||!!storageError}><Layers size={16}/>카테고리 관리</button><button className=\"button text-button\" disabled={!ready||!!storageError} onClick={()=>fileRef.current?.click()}><FileUp size={16}/>CSV 가져오기</button><button className=\"button text-button\" disabled={!db.words.length} onClick={download}><ArrowDownToLine size={16}/>내보내기</button>"
+    text, _ = replace_once(text, old_actions, new_actions, "manager button")
+
+    text, _ = replace_once(text, "<div className=\"search-sort\"><label className=\"search\">", "<div className=\"search-sort\"><select className=\"category-filter\" aria-label=\"카테고리 필터\" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value=\"all\">모든 카테고리</option>{categoryNames.map(category=><option key={category} value={category}>{category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select><label className=\"search\">", "filter select")
+
+    old_card_top = "<div className=\"word-card-top\"><span className={`status ${w.level>=4?'known':w.level?'learning':''}`}>{w.level>=4?'익숙해요':w.level?'학습 중':'새 단어'}</span><button"
+    new_card_top = "<div className=\"word-card-top\"><div className=\"word-card-labels\"><span className={`status ${w.level>=4?'known':w.level?'learning':''}`}>{w.level>=4?'익숙해요':w.level?'학습 중':'새 단어'}</span>{w.category&&<span className=\"category-badge\">{w.category}</span>}</div><button"
+    text, _ = replace_once(text, old_card_top, new_card_top, "card badge")
+
+    text, _ = replace_once(text, "<option value=\"wrong\">틀린 단어 ({wrongWords.length})</option></select>", "<option value=\"wrong\">틀린 단어 ({wrongWords.length})</option>{categoryNames.map(category=><option key={category} value={`category:${category}`}>카테고리 · {category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select>", "study scope")
+
+    text, _ = replace_once(text, "<WordEntriesEditor word={editor} onChange={setEditor}/><label>메모", "<WordEntriesEditor word={editor} onChange={setEditor}/><label>카테고리<input list=\"category-options\" placeholder=\"카테고리 선택 또는 새로 입력\" maxLength={60} value={editor.category??''} onChange={e=>setEditor({...editor,category:e.target.value})}/><datalist id=\"category-options\">{categoryNames.map(category=><option key={category} value={category}/>)}</datalist></label><label>메모", "editor category")
+
+    text, _ = replace_once(text, "<h2 id=\"modal-title\" className=\"detail-word\">{detail.word}</h2><MeaningList word={detail}/>", "<h2 id=\"modal-title\" className=\"detail-word\">{detail.word}</h2>{detail.category&&<div className=\"detail-category\"><span className=\"category-badge\">{detail.category}</span></div>}<MeaningList word={detail}/>", "detail category")
+
+    old_branch = ":pendingImport?<><p className=\"eyebrow\">CSV IMPORT</p>"
+    new_branch = r''':categoryManager?<><p className="eyebrow">WORD CATEGORIES</p><h2 id="modal-title">카테고리 관리</h2><p className="muted">단어를 주제별로 묶어 관리하고, 카테고리별로 학습할 수 있어요.</p><div className="category-add-row"><input aria-label="새 카테고리 이름" placeholder="예: TOEIC, 회사 영어" maxLength={60} value={newCategory} onChange={e=>setNewCategory(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();addCategory();}}}/><button type="button" className="button primary" onClick={addCategory}><Plus size={16}/>추가</button></div>{categoryNames.length?<div className="category-list">{categoryNames.map(category=><div className="category-row" key={category}><div><strong>{category}</strong><span>{db.words.filter(w=>(w.category??'')===category).length}개 단어</span></div><div className="actions"><button type="button" className="icon-button" aria-label={`${category} 이름 변경`} title="이름 변경" onClick={()=>renameCategory(category)}><Pencil size={15}/></button><button type="button" className="icon-button danger" aria-label={`${category} 삭제`} title="카테고리 삭제" onClick={()=>deleteCategory(category)}><Trash2 size={15}/></button></div></div>)}</div>:<div className="category-empty">아직 만든 카테고리가 없어요.</div>}<div className="modal-footer"><button type="button" className="button primary" onClick={closeModal}>완료</button></div></>:pendingImport?<><p className="eyebrow">CSV IMPORT</p>'''
+    text, _ = replace_once(text, old_branch, new_branch, "manager modal")
+    return text
+
+
+def patch_css(css: str) -> str:
+    if f"/* {MARKER} */" in css:
+        return css
+    addition = r"""
+/* CATEGORY_FEATURE_V1 */
+.word-card-labels{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
+.category-badge{display:inline-flex;align-items:center;max-width:170px;padding:4px 8px;border-radius:999px;background:#edf3ef;color:#55705d;border:1px solid #dbe7de;font-size:9px;font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.category-filter{max-width:190px}
+.detail-category{margin:-5px 0 15px}
+.category-add-row{display:flex;gap:8px;margin:20px 0 14px}
+.category-add-row input{flex:1;min-width:0}
+.category-add-row .button{flex:none}
+.category-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:9px;overflow:hidden;max-height:330px;overflow-y:auto}
+.category-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;background:#fff;border-bottom:1px solid var(--line)}
+.category-row:last-child{border-bottom:0}
+.category-row>div:first-child{display:flex;flex-direction:column;gap:4px;min-width:0}
+.category-row strong{font-size:13px;overflow-wrap:anywhere}
+.category-row span{font-size:9px;color:#89938c}
+.category-empty{padding:30px 16px;border:1px dashed #d9e1db;border-radius:9px;text-align:center;color:#8b958e;font-size:11px}
+@media(max-width:760px){.category-filter{max-width:none;width:100%}.category-add-row{align-items:stretch}}
+"""
+    return css.rstrip() + "\n\n" + addition.strip() + "\n"
+
+
+def validate(vocab: str, page: str, css: str) -> None:
+    checks = [
+        ("Word category", "category?: string"),
+        ("Database categories", "categories?: string[]"),
+        ("categoryNames", "const categoryNames="),
+        ("filter", 'aria-label="카테고리 필터"'),
+        ("manager", "카테고리 관리"),
+        ("study scope", "카테고리 · {category}"),
+        ("editor", "editor.category??''"),
+        ("css", ".category-badge{"),
+    ]
+    merged = vocab + "\n" + page + "\n" + css
+    missing = [label for label, token in checks if token not in merged]
+    if missing:
+        die("최종 검증 실패: " + ", ".join(missing))
+    if page.count("const categoryNames=") != 1:
+        die("categoryNames 선언 개수가 비정상입니다.")
+    if page.count("function addCategory()") != 1:
+        die("addCategory 함수 개수가 비정상입니다.")
 
 
 def main() -> None:
     root = Path.cwd()
+    package = root / "package.json"
     page_path = root / "app" / "page.tsx"
+    vocab_path = root / "app" / "lib" / "vocabulary.ts"
     css_path = root / "app" / "globals.css"
 
-    if not (root / "package.json").exists():
-        fail("프로젝트 루트에서 실행해주세요. package.json을 찾을 수 없습니다.")
-
-    for path in (page_path, css_path):
+    if not package.exists():
+        die("package.json이 없습니다. voca-web 프로젝트 루트에서 실행해주세요.")
+    for path in (page_path, vocab_path, css_path):
         if not path.exists():
-            fail(f"필수 파일을 찾을 수 없습니다: {path}")
+            die(f"필수 파일을 찾지 못했습니다: {path}")
 
     page = page_path.read_text(encoding="utf-8")
+    vocab = vocab_path.read_text(encoding="utf-8")
     css = css_path.read_text(encoding="utf-8")
 
-    if MARKER in page:
-        print("오답노트 패치가 이미 적용되어 있습니다. 변경하지 않습니다.")
+    if MARKER in page and MARKER in vocab:
+        print("[INFO] 카테고리 패치가 이미 적용되어 있습니다.")
         return
 
-    # ------------------------------------------------------------------
-    # 1. 기존 reviews를 기반으로 오답 통계 계산
-    # ------------------------------------------------------------------
-    old = """  const mastered=db.words.filter(w=>w.level>=4).length;
-  let streak=0;"""
-    new = f"""  const mastered=db.words.filter(w=>w.level>=4).length;
-
-  // {MARKER}
-  // 별도 DB 필드를 추가하지 않고 기존 reviews 기록으로 오답노트를 계산합니다.
-  const wrongStats=db.words.flatMap(word=>{{
-    const reviews=db.reviews.filter(r=>r.wordId===word.id);
-    const wrongReviews=reviews.filter(r=>!r.correct);
-    if(!wrongReviews.length)return [];
-    const correct=reviews.length-wrongReviews.length;
-    return [{{
-      word,
-      wrong:wrongReviews.length,
-      correct,
-      total:reviews.length,
-      accuracy:Math.round(correct/reviews.length*100),
-      lastWrong:wrongReviews[wrongReviews.length-1]?.date??'',
-    }}];
-  }}).sort((a,b)=>b.wrong-a.wrong||a.accuracy-b.accuracy||a.word.word.localeCompare(b.word.word));
-  const wrongWords=wrongStats.map(item=>item.word);
-
-  let streak=0;"""
-    page = replace_once(page, old, new, "오답 통계")
-
-    # ------------------------------------------------------------------
-    # 2. 페이지 메타데이터: 오답노트 제목/설명
-    # ------------------------------------------------------------------
-    old = """  const week=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);const key=localDate(d);return{day:['일','월','화','수','목','금','토'][d.getDay()],count:db.reviews.filter(r=>r.date===key).length,key};});
-  return <div className="app-shell">"""
-    new = """  const week=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);const key=localDate(d);return{day:['일','월','화','수','목','금','토'][d.getDay()],count:db.reviews.filter(r=>r.date===key).length,key};});
-  const pageMeta:Record<string,{eyebrow:string;title:string;desc:string}>={
-    words:{eyebrow:'WORDS THAT STAY WITH YOU',title:'나의 단어장',desc:'발견한 단어를 모아, 나만의 언어로 만들어보세요.'},
-    study:{eyebrow:'A LITTLE PRACTICE, EVERY DAY',title:'오늘의 학습',desc:'한 번 더 떠올리는 순간, 단어가 오래 남아요.'},
-    wrong:{eyebrow:'WORDS TO MEET AGAIN',title:'오답노트',desc:'헷갈렸던 단어를 모아, 다시 확실하게 기억해보세요.'},
-    stats:{eyebrow:'YOUR GROWTH, ONE WORD AT A TIME',title:'학습 기록',desc:'작은 반복이 쌓여, 더 넓은 어휘가 됩니다.'},
-  };
-  const currentPageMeta=pageMeta[page]??pageMeta.words;
-  return <div className="app-shell">"""
-    page = replace_once(page, old, new, "페이지 메타데이터")
-
-    # ------------------------------------------------------------------
-    # 3. 사이드바 메뉴에 오답노트 추가
-    # ------------------------------------------------------------------
-    old = """<aside className="sidebar"><a className="brand" href="/" aria-label="LEAF 홈"><span className="brand-symbol"><Leaf size={24}/></span>leaf<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}</button>)}</nav>"""
-    new = """<aside className="sidebar"><a className="brand" href="/" aria-label="LEAF 홈"><span className="brand-symbol"><Leaf size={24}/></span>leaf<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'wrong',label:'오답노트',icon:RotateCcw},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}{id==='wrong'&&wrongWords.length>0&&<span className="nav-count wrong-count">{wrongWords.length}</span>}</button>)}</nav>"""
-    page = replace_once(page, old, new, "사이드바 오답노트 메뉴")
-
-    # ------------------------------------------------------------------
-    # 4. 상단 breadcrumb / 페이지 헤딩을 공통 pageMeta로 변경
-    # ------------------------------------------------------------------
-    old = """<div className="main-area"><header className="topbar"><div><span className="muted">나의 학습 공간</span><ChevronRight size={14}/><span>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':'학습 기록'}</span></div>"""
-    new = """<div className="main-area"><header className="topbar"><div><span className="muted">나의 학습 공간</span><ChevronRight size={14}/><span>{currentPageMeta.title}</span></div>"""
-    page = replace_once(page, old, new, "상단 breadcrumb")
-
-    old = """<main><section className="page-heading"><div><p className="eyebrow">{page==='words'?'WORDS THAT STAY WITH YOU':page==='study'?'A LITTLE PRACTICE, EVERY DAY':'YOUR GROWTH, ONE WORD AT A TIME'}</p><h1>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':'학습 기록'}</h1><p>{page==='words'?'발견한 단어를 모아, 나만의 언어로 만들어보세요.':page==='study'?'한 번 더 떠올리는 순간, 단어가 오래 남아요.':'작은 반복이 쌓여, 더 넓은 어휘가 됩니다.'}</p></div>{page==='words'&&"""
-    new = """<main><section className="page-heading"><div><p className="eyebrow">{currentPageMeta.eyebrow}</p><h1>{currentPageMeta.title}</h1><p>{currentPageMeta.desc}</p></div>{page==='words'&&"""
-    page = replace_once(page, old, new, "페이지 헤딩")
-
-    # ------------------------------------------------------------------
-    # 5. 오답만 학습할 수 있도록 startQuiz 범위 추가
-    # ------------------------------------------------------------------
-    old = """function startQuiz(mode:Mode){const pool=scope==='due'?due:scope==='favorite'?db.words.filter(w=>w.favorite):db.words;"""
-    new = """function startQuiz(mode:Mode){const pool=scope==='due'?due:scope==='favorite'?db.words.filter(w=>w.favorite):scope==='wrong'?wrongWords:db.words;"""
-    page = replace_once(page, old, new, "오답 학습 범위")
-
-    # ------------------------------------------------------------------
-    # 6. 오늘의 학습 select에 "오답노트" 추가
-    # ------------------------------------------------------------------
-    old = """<option value="favorite">즐겨찾기 ({db.words.filter(w=>w.favorite).length})</option></select>"""
-    new = """<option value="favorite">즐겨찾기 ({db.words.filter(w=>w.favorite).length})</option><option value="wrong">오답노트 ({wrongWords.length})</option></select>"""
-    page = replace_once(page, old, new, "학습 범위 select")
-
-    # ------------------------------------------------------------------
-    # 7. 오답노트 페이지 UI 추가
-    # ------------------------------------------------------------------
-    anchor = """    {page==='stats'&&<section className="stats-section">"""
-    wrong_section = """    {page==='wrong'&&<section className="wrong-section"><div className="section-title wrong-title"><div><h2>다시 볼 단어 <span>{wrongStats.length}</span></h2><p className="muted">한 번 이상 틀린 단어를 오답 횟수가 많은 순서로 모았어요.</p></div><button className="button primary" disabled={!wrongWords.length} onClick={()=>{setPage('study');setScope('wrong');setQuiz(null);}}>오답만 다시 학습<ArrowRight size={17}/></button></div>{wrongStats.length?<div className="wrong-list">{wrongStats.map(({word,wrong,correct,total,accuracy,lastWrong})=><article className="wrong-row" key={word.id}><div className="wrong-word"><button className="word-link" onClick={()=>setDetail(word)}>{word.word}</button><button className="icon-button" aria-label={`${word.word} 발음 듣기`} title="발음 듣기" onClick={()=>speak(word.word)}><AudioLines size={16}/></button><p>{word.meaning}</p></div><div className="wrong-metrics"><div><span>오답</span><strong className="wrong-number">{wrong}<small>회</small></strong></div><div><span>정답</span><strong>{correct}<small>회</small></strong></div><div><span>정답률</span><strong>{accuracy}<small>%</small></strong></div><div><span>최근 오답</span><strong className="wrong-date">{lastWrong||'-'}</strong></div></div><div className="wrong-bar" aria-label={`${word.word} 정답률 ${accuracy}%`}><div style={{width:`${accuracy}%`}}/></div><div className="wrong-row-footer"><span>총 {total}회 학습</span><button className="button text-button" onClick={()=>setDetail(word)}>단어 보기<ChevronRight size={14}/></button></div></article>)}</div>:<div className="empty-state wrong-empty"><Check size={34}/><h3>아직 오답이 없어요.</h3><p>학습 중 틀린 단어가 생기면 여기에 자동으로 모입니다.</p><button className="button primary" onClick={()=>setPage('study')}>학습 시작<ArrowRight size={16}/></button></div>}</section>}
-"""
-    if anchor not in page:
-        fail("오답노트 페이지를 삽입할 위치를 찾지 못했습니다.")
-    page = page.replace(anchor, wrong_section + anchor, 1)
-
-    # ------------------------------------------------------------------
-    # 8. CSS 추가
-    # ------------------------------------------------------------------
-    css_addition = r"""
-/* WRONG_NOTE_FEATURE_V1 */
-.wrong-count{background:#f4e3dc!important;color:#9d6657!important}
-.wrong-section{padding:12px 0 30px}
-.wrong-title{align-items:flex-end}
-.wrong-title>div>p{font-size:11px;margin-top:8px}
-.wrong-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
-.wrong-row{position:relative;background:#fff;border:1px solid #e3e7e2;border-radius:7px;padding:19px 20px 14px;overflow:hidden}
-.wrong-row:hover{border-color:#c8d3c8;box-shadow:0 4px 16px #244d3710}
-.wrong-word{display:grid;grid-template-columns:auto 30px 1fr;align-items:center;column-gap:6px;min-width:0}
-.wrong-word .word-link{font-size:24px}
-.wrong-word>p{grid-column:1/-1;font-size:12px;color:#69766d;margin-top:8px;overflow-wrap:anywhere}
-.wrong-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;border-top:1px solid #edf0ec;margin-top:15px;padding-top:15px}
-.wrong-metrics>div{min-width:0}
-.wrong-metrics span{display:block;font-size:9px;color:#929b93;margin-bottom:5px}
-.wrong-metrics strong{font-size:18px;font-weight:600;overflow-wrap:anywhere}
-.wrong-metrics .wrong-number{color:#b56f5e}
-.wrong-metrics .wrong-date{font-size:11px;line-height:1.4}
-.wrong-metrics small{font-size:9px;margin-left:3px}
-.wrong-bar{height:4px;border-radius:999px;background:#f0e3de;margin-top:15px;overflow:hidden}
-.wrong-bar>div{height:100%;background:#709477;min-width:0;transition:width .2s}
-.wrong-row-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:9px;color:#98a098}
-.wrong-row-footer .button{min-height:28px}
-.wrong-empty{margin-top:10px}
-
-@media(max-width:900px){
-  .wrong-list{grid-template-columns:1fr}
-}
-@media(max-width:600px){
-  .wrong-title{align-items:flex-start}
-  .wrong-title>div{width:100%}
-  .wrong-title>.button{width:100%}
-  .wrong-metrics{grid-template-columns:repeat(2,1fr);row-gap:14px}
-  .wrong-word{grid-template-columns:auto 30px}
-  .wrong-word>p{grid-column:1/-1}
-}
-"""
-    css = css.rstrip() + "\n" + css_addition.strip() + "\n"
-
-    # ------------------------------------------------------------------
-    # 9. 최종 검증 후 백업 + 저장
-    # ------------------------------------------------------------------
-    required_checks = [
-        ("오답노트 메뉴", "label:'오답노트'"),
-        ("오답 통계", "const wrongStats="),
-        ("오답 학습 범위", "scope==='wrong'?wrongWords"),
-        ("오답 페이지", "page==='wrong'&&<section className=\"wrong-section\">"),
-        ("CSS", ".wrong-list{"),
-    ]
-    combined = page + "\n" + css
-    for label, token in required_checks:
-        if token not in combined:
-            fail(f"최종 검증 실패: {label}")
+    vocab = patch_vocabulary(vocab)
+    page = patch_page(page)
+    css = patch_css(css)
+    validate(vocab, page, css)
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    page_backup = backup_file(page_path, stamp)
-    css_backup = backup_file(css_path, stamp)
+    backups = [backup(page_path, stamp), backup(vocab_path, stamp), backup(css_path, stamp)]
 
     page_path.write_text(page, encoding="utf-8", newline="\n")
+    vocab_path.write_text(vocab, encoding="utf-8", newline="\n")
     css_path.write_text(css, encoding="utf-8", newline="\n")
 
-    print("\n[OK] 오답노트 기능을 적용했습니다.")
-    print(f"  수정: {page_path}")
-    print(f"  수정: {css_path}")
-    print(f"  백업: {page_backup}")
-    print(f"  백업: {css_backup}")
-    print("\n다음 명령으로 확인하세요:")
+    print("\n[OK] 카테고리 기능을 적용했습니다.")
+    print(f"수정: {page_path}")
+    print(f"수정: {vocab_path}")
+    print(f"수정: {css_path}")
+    for item in backups:
+        print(f"백업: {item}")
+    print("\n추가된 기능")
+    print("- 단어 등록/수정 시 카테고리 선택")
+    print("- 카테고리 추가 / 이름 변경 / 삭제")
+    print("- 단어 목록 카테고리 필터")
+    print("- 단어 카드와 상세 화면 카테고리 표시")
+    print("- 카테고리별 퀴즈 학습")
+    print("- CSV category 열 가져오기/내보내기")
+    print("- 기존 저장 데이터 자동 호환")
+    print("\n확인:")
     print("  npm run build")
     print("  npm run dev")
-    print("\n추가된 기능:")
-    print("  - 사이드바 오답노트")
-    print("  - 오답 횟수 / 정답 횟수 / 정답률 / 최근 오답일")
-    print("  - 오답 많은 순 자동 정렬")
-    print("  - 오답 단어만 다시 학습")
-    print("  - 기존 LocalStorage/DB 형식 변경 없음")
 
 
 if __name__ == "__main__":
