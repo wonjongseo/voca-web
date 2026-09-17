@@ -10,6 +10,7 @@ import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from '.
 type Mode = 'flash'|'choice'|'typing'|'context';
 type QuizChoice = string|{meaning:string;word:string;example:string;translation?:string};
 type Session = {mode: Mode; words: Word[]; index: number; correct: number; incorrectIds?: string[]; choices: QuizChoice[][]};
+const QUIZ_HISTORY_KEY = 'leaf-quiz-history-v1';
 const modes = [{id:'flash' as const,name:'플래시카드',desc:'단어를 떠올리고, 카드를 뒤집어 확인해요.',icon:Layers},{id:'choice' as const,name:'객관식 퀴즈',desc:'단어에 맞는 의미를 골라보세요.',icon:CircleHelp},{id:'typing' as const,name:'철자 입력',desc:'의미를 보고 영어 단어를 완성해요.',icon:Pencil},{id:'context' as const,name:'예문 퀴즈',desc:'예문 속 빈칸에 들어갈 단어를 골라보세요.',icon:BookOpen}];
 const emptyDB: Database = {version:1, words:[], reviews:[]};
 
@@ -71,6 +72,32 @@ function acceptsSpelling(answer:string, expected:string) {
     longIndex++;
   }
   return true;
+}
+
+function readQuizHistory(): Record<string,string[]> {
+  try {
+    const parsed=JSON.parse(localStorage.getItem(QUIZ_HISTORY_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeQuizHistory(history: Record<string,string[]>) {
+  try {localStorage.setItem(QUIZ_HISTORY_KEY,JSON.stringify(history));} catch {}
+}
+
+function selectBalancedWords(mode:Mode,pool:Word[],limit:number) {
+  const history=readQuizHistory();
+  const poolIds=new Set(pool.map(word=>word.id));
+  const seen=(history[mode] || []).filter(id=>poolIds.has(id));
+  const unseen=shuffle(pool.filter(word=>!seen.includes(word.id)));
+  const seenWords=shuffle(seen.flatMap(id=>pool.find(word=>word.id===id) ?? []));
+  const words=[...unseen,...seenWords].slice(0,limit);
+  const pickedIds=words.map(word=>word.id);
+  history[mode]=[...seen.filter(id=>!pickedIds.includes(id)),...pickedIds].filter(id=>poolIds.has(id)).slice(-pool.length);
+  writeQuizHistory(history);
+  return words;
 }
 
 export default function Home() {
@@ -183,7 +210,7 @@ export default function Home() {
     if(mode==='context')pool=pool.filter(word=>getExamples(word).some(example=>example.text.trim()));
     if(!pool.length){setNotice(mode==='context'?'선택한 범위에 예문이 등록된 단어가 없습니다.':scope==='favorite'?'즐겨찾기한 단어가 없습니다.':scope==='wrong'?'다시 학습할 틀린 단어가 없습니다.':'저장한 단어가 없습니다.');return;}
     const limit=retryWords?.length??(quizSize==='all'?pool.length:Number(quizSize));
-    const words=shuffle(pool).slice(0,limit);
+    const words=mode==='typing'&&!retryWords?selectBalancedWords(mode,pool,limit):shuffle(pool).slice(0,limit);
     if(mode==='choice'&&new Set(db.words.map(w=>w.meaning)).size<2){setNotice('객관식 퀴즈에는 서로 다른 의미의 단어가 2개 이상 필요합니다.');return;}
     if(mode==='context'&&db.words.length<2){setNotice('예문 퀴즈에는 단어가 2개 이상 필요합니다.');return;}
     setQuiz({mode,words,index:0,correct:0,incorrectIds:[],choices:words.map(w=>makeChoices(w,db.words))});
