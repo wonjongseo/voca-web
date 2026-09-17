@@ -21,6 +21,8 @@ npm run build
 
 ## Multiple examples and synonyms
 
+Meanings also support separate entries through the meaning add button, with automatic focus on the new input. At least one meaning is required. All meanings appear in search and quizzes; details and flashcards show a numbered list. CSV exports preserve the list in `meanings_json` (which overrides `meaning` when importing). Existing single meanings remain intact, including embedded commas.
+
 Use the add buttons in the word editor to register multiple examples (each with its own translation) and synonyms. Each entry can be edited or removed separately. Word details and flashcards show all examples. Existing saved words and old CSV files remain readable. New CSV exports add `examples_json` and `synonyms_json` columns to preserve all entries, including quotes, commas and line breaks. These columns take precedence over the legacy single-value columns when importing.
 
 ## Data

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {blankWord, exportCSV, parseCSV, schedule, loadDatabase, DAY, localDate, getExamples, getSynonyms, withExamples, withSynonyms, cleanEntries} from '../app/lib/vocabulary.ts';
+import {blankWord, exportCSV, parseCSV, schedule, loadDatabase, DAY, localDate, getExamples, getSynonyms, withExamples, withSynonyms, cleanEntries, getMeanings, withMeanings} from '../app/lib/vocabulary.ts';
 
 test('CSV preserves Korean, quoted commas, multiline notes and study progress',()=>{
   const word={...blankWord(),word:'resilient',meaning:'회복력이 있는, 강인한',example:'She said, "Keep going."',translation:'그녀는 "계속해"라고 말했다.',memo:'첫째 줄\n둘째 줄',favorite:true,level:3,due:2000};
@@ -77,4 +77,32 @@ test('corrupt entry arrays are rejected before replacing saved data',()=>{
     assert.throws(()=>loadDatabase(JSON.stringify({version:1,words:[{...word,...changes}],reviews:[]})));
   }
   for(const csv of ['word,meaning,examples_json\nhello,안녕,not-json','word,meaning,examples_json\nhello,안녕,[1]','word,meaning,synonyms_json\nhello,안녕,[null]'])assert.throws(()=>parseCSV(csv));
+});
+
+test('multiple meanings survive CSV, storage and review; legacy meanings are not split',()=>{
+  const legacy={...blankWord(),word:'run',meaning:'달리다, 뛰다'};
+  assert.deepEqual(getMeanings(legacy),['달리다, 뛰다']);
+  const meanings=['달리다, 뛰다','운영하다; 경영하다','흐르다\n(액체)'];
+  const word=withMeanings(legacy,meanings);
+  assert.equal(word.meaning,meanings.join('; '));
+  const imported=parseCSV(exportCSV([word])).words[0];
+  const loaded=loadDatabase(JSON.stringify({version:1,words:[schedule(imported,true)],reviews:[]})).words[0];
+  assert.deepEqual(getMeanings(loaded),meanings);
+  assert.equal(loaded.meaning,word.meaning);
+});
+
+test('meaning edits and removals keep quiz and search text synchronized',()=>{
+  const original=withMeanings({...blankWord(),word:'run',meaning:'달리다'},['달리다','운영하다']);
+  const edited=withMeanings(original,['뛰다','흐르다']);
+  assert.equal(edited.meaning,'뛰다; 흐르다');
+  const removed=withMeanings(edited,getMeanings(edited).slice(1));
+  assert.equal(removed.meaning,'흐르다');
+  assert.deepEqual(getMeanings(original),['달리다','운영하다']);
+  assert.deepEqual(getMeanings(cleanEntries(withMeanings(original,[' 달리다 ','  ',' 운영하다 ']))),['달리다','운영하다']);
+});
+
+test('empty, invalid or inconsistent meaning lists cannot enter saved data',()=>{
+  const word={...blankWord(),word:'run',meaning:'달리다'};
+  for(const meaningEntries of [[],[' '],[null],['다른 의미']])assert.throws(()=>loadDatabase(JSON.stringify({version:1,words:[{...word,meaningEntries}],reviews:[]})));
+  for(const value of ['[]','[null]','not-json'])assert.throws(()=>parseCSV(`word,meaning,meanings_json\nrun,달리다,${value}`));
 });
