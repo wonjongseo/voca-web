@@ -3,28 +3,30 @@
 import {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, ChartNoAxesCombined, Check, ChevronRight, CircleHelp, Clock3, FileUp, Flame, Layers, Leaf, Pencil, Plus, RotateCcw, Search, Sprout, Star, Trash2, X} from 'lucide-react';
-import {cleanEntries, getExamples, getSynonyms, blankWord, demoWords, exportCSV, loadDatabase, localDate, parseCSV, schedule, shuffle, STORAGE_KEY, type Database, type Word} from './lib/vocabulary';
+import {cleanEntries, getExamples, getMeanings, getSynonyms, blankWord, demoWords, exportCSV, loadDatabase, localDate, parseCSV, schedule, shuffle, STORAGE_KEY, type Database, type Word} from './lib/vocabulary';
 
 import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from './word-entries';
 
 type Mode = 'flash'|'choice'|'typing'|'context';
 type QuizChoice = string|{meaning:string;word:string;example:string;translation?:string};
-type Session = {mode: Mode; words: Word[]; index: number; correct: number; incorrectIds?: string[]; choices: QuizChoice[][]};
+type Session = {mode: Mode; words: Word[]; meanings: string[]; index: number; correct: number; incorrectIds?: string[]; choices: QuizChoice[][]};
 const QUIZ_HISTORY_KEY = 'leaf-quiz-history-v1';
 const modes = [{id:'flash' as const,name:'플래시카드',desc:'단어를 떠올리고, 카드를 뒤집어 확인해요.',icon:Layers},{id:'choice' as const,name:'객관식 퀴즈',desc:'단어에 맞는 의미를 골라보세요.',icon:CircleHelp},{id:'typing' as const,name:'철자 입력',desc:'의미를 보고 영어 단어를 완성해요.',icon:Pencil},{id:'context' as const,name:'예문 퀴즈',desc:'예문 속 빈칸에 들어갈 단어를 골라보세요.',icon:BookOpen}];
 const emptyDB: Database = {version:1, words:[], reviews:[]};
 
 const choiceMeaning=(choice:QuizChoice)=>typeof choice==='string'?choice:choice.meaning;
+const randomMeaning=(word:Word)=>shuffle(getMeanings(word))[0] ?? word.meaning;
 function makeChoices(target:Word,words:Word[]):QuizChoice[] {
   const selected:Word[]=[target];
-  const meanings=new Set([target.meaning]);
+  const meanings=new Set(getMeanings(target));
   for(const word of shuffle(words)){
-    if(word.id===target.id||meanings.has(word.meaning))continue;
+    const meaning=randomMeaning(word);
+    if(word.id===target.id||meanings.has(meaning))continue;
     selected.push(word);
-    meanings.add(word.meaning);
+    meanings.add(meaning);
     if(selected.length===4)break;
   }
-  return shuffle(selected.map(word=>{const example=getExamples(word)[0];return {meaning:word.meaning,word:word.word,example:example?.text??'',translation:example?.translation??''};}));
+  return shuffle(selected.map(word=>{const example=getExamples(word)[0];return {meaning:randomMeaning(word),word:word.word,example:example?.text??'',translation:example?.translation??''};}));
 }
 
 function ChoiceContent({choice,revealed,wordFirst=false}:{choice:QuizChoice;revealed:boolean;wordFirst?:boolean}) {
@@ -213,12 +215,13 @@ export default function Home() {
     const words=mode==='typing'&&!retryWords?selectBalancedWords(mode,pool,limit):shuffle(pool).slice(0,limit);
     if(mode==='choice'&&new Set(db.words.map(w=>w.meaning)).size<2){setNotice('객관식 퀴즈에는 서로 다른 의미의 단어가 2개 이상 필요합니다.');return;}
     if(mode==='context'&&db.words.length<2){setNotice('예문 퀴즈에는 단어가 2개 이상 필요합니다.');return;}
-    setQuiz({mode,words,index:0,correct:0,incorrectIds:[],choices:words.map(w=>makeChoices(w,db.words))});
+    setQuiz({mode,words,meanings:words.map(randomMeaning),index:0,correct:0,incorrectIds:[],choices:words.map(w=>makeChoices(w,db.words))});
     setAnswer('');setAcceptedTypo(false);setRevealed(false);setGraded(null);busyGrade.current=false;
   }
   function grade(correct:boolean){if(!quiz||graded!==null||busyGrade.current)return;busyGrade.current=true;const word=quiz.words[quiz.index];const current=dbRef.current;const latest=current.words.find(w=>w.id===word.id);if(!latest){setQuiz(null);busyGrade.current=false;return;}if(commit({...current,words:current.words.map(w=>w.id===word.id?schedule(w,correct):w),reviews:[...current.reviews,{date:localDate(),correct,wordId:word.id}]})){setGraded(correct);setRevealed(true);setQuiz({...quiz,correct:quiz.correct+(correct?1:0),incorrectIds:correct?(quiz.incorrectIds??[]):[...(quiz.incorrectIds??[]),word.id]});}else busyGrade.current=false;}
   function nextQuestion(){if(!quiz)return;setQuiz({...quiz,index:quiz.index+1});setGraded(null);setAnswer('');setAcceptedTypo(false);setRevealed(false);busyGrade.current=false;}
   const current=quiz?.words[quiz.index];
+  const currentMeaning=quiz?.meanings?.[quiz.index] ?? current?.meaning ?? '';
   const week=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);const key=localDate(d);return{day:['일','월','화','수','목','금','토'][d.getDay()],count:db.reviews.filter(r=>r.date===key).length,key};});
   return <div className="app-shell">
     <aside className="sidebar"><a className="brand" href="/" aria-label="LEAF 홈"><span className="brand-symbol"><Leaf size={24}/></span>leaf<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="little-sprout"><Sprout size={29}/></div><strong>조금씩, 매일, 꾸준히.</strong><p>오늘의 단어가<br/>내일의 나를 넓혀줘요.</p><div className="local-indicator"><span/>이 브라우저에 저장됨</div></div></aside>
