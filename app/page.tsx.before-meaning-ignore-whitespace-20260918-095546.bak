@@ -6,13 +6,11 @@ import {ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, ChartNoAxe
 import {cleanEntries, getExamples, getMeanings, getSynonyms, blankWord, demoWords, exportCSV, loadDatabase, localDate, parseCSV, schedule, shuffle, STORAGE_KEY, type Database, type Word} from './lib/vocabulary';
 
 import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from './word-entries';
-import {pronunciationSources} from './lib/pronunciation';
 
 type Mode = 'flash'|'choice'|'typing'|'meaningTyping'|'context';
 type QuizChoice = string|{meaning:string;word:string;example:string;translation?:string};
 type Session = {mode: Mode; words: Word[]; meanings: string[]; index: number; correct: number; incorrectIds?: string[]; choices: QuizChoice[][]};
 const QUIZ_HISTORY_KEY = 'leaf-quiz-history-v1';
-const AUTO_PRONUNCIATION_KEY = 'leaf-quiz-auto-pronunciation-v1';
 const REUSE_LAST_CATEGORY_KEY = 'leaf-reuse-last-category-v1'; // REUSE_LAST_CATEGORY_V1
 // RELEARNING_FEATURE_V2
 const RELEARNING_STREAK_TARGET=3;
@@ -95,9 +93,9 @@ function maskedExample(word:Word) {
 
 function preferredEnglishVoice(voices:SpeechSynthesisVoice[]) {
   const preferredNames=['natural','neural','google us english','microsoft aria','microsoft jenny','samantha','ava','zira'];
-  return voices.filter(voice=>/^en(?:[-_]|$)/i.test(voice.lang)).sort((a,b)=>{
+  return voices.filter(voice=>voice.lang.toLowerCase().startsWith('en')).sort((a,b)=>{
     const score=(voice:SpeechSynthesisVoice)=>{
-      const language=voice.lang.toLowerCase().replaceAll('_','-');
+      const language=voice.lang.toLowerCase();
       const name=voice.name.toLowerCase();
       return (language==='en-us'?100:language.startsWith('en-us')?90:language.startsWith('en-gb')?70:50)+preferredNames.reduce((total,term,index)=>total+(name.includes(term)?30-index:0),0);
     };
@@ -106,19 +104,37 @@ function preferredEnglishVoice(voices:SpeechSynthesisVoice[]) {
 }
 
 // DICTIONARY_MP3_PRONUNCIATION_V1
-// DICTIONARY_MP3_PRONUNCIATION_V2
+type DictionaryPronunciation = {
+  audio?: string;
+};
+
+type DictionaryEntry = {
+  phonetics?: DictionaryPronunciation[];
+};
+
+const pronunciationAudioCache=new Map<string,string>();
 let activePronunciationAudio:HTMLAudioElement|null=null;
-let pronunciationRequest=0;
-function stopPronunciation(){
-  pronunciationRequest++;
-  if(activePronunciationAudio){
-    activePronunciationAudio.pause();
-    activePronunciationAudio.removeAttribute('src');
-    activePronunciationAudio.load();
-    activePronunciationAudio=null;
-  }
-  if('speechSynthesis' in window)window.speechSynthesis.cancel();
+
+function normalizePronunciationUrl(url:string) {
+  if(url.startsWith('//'))return `https:${url}`;
+  if(url.startsWith('http://'))return `https://${url.slice('http://'.length)}`;
+  return url;
 }
+
+function choosePronunciationAudio(entries:DictionaryEntry[]) {
+  const urls=entries
+    .flatMap(entry=>entry.phonetics??[])
+    .map(phonetic=>phonetic.audio?.trim()??'')
+    .filter(Boolean)
+    .map(normalizePronunciationUrl);
+
+  if(!urls.length)return '';
+
+  return urls.find(url=>/_us(?:_|\.|$)/i.test(url))
+    ?? urls.find(url=>/us[_-]/i.test(url))
+    ?? urls[0];
+}
+
 
 function acceptsSpelling(answer:string, expected:string) {
   const a=answer.trim().toLowerCase();
@@ -160,83 +176,21 @@ function removeMeaningContext(value:string) {
   return value
     .normalize('NFKC')
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g,'')
-    .replace(/[~～〜]/g,'') // MEANING_IGNORE_TILDE_V1
     .replace(/\([^)]*\)/g,' ')
     .replace(/（[^）]*）/g,' ')
     .replace(/\s+/g,' ')
     .trim();
 }
 
-// MEANING_IGNORE_WHITESPACE_V1
 function normalizeMeaningFragment(value:string) {
   return removeMeaningContext(value)
     .normalize('NFKC')
-    .replace(/\s+/g,'')
     .toLocaleLowerCase('ko-KR');
 }
 
-// MEANING_SPLIT_OUTSIDE_PARENS_V1
-function splitMeaningPartsOutsideParentheses(value:string) {
-  const parts:string[]=[];
-  let buffer='';
-  let roundDepth=0;
-  let fullWidthDepth=0;
-
-  const push=()=>{
-    const trimmed=buffer.trim();
-    if(trimmed)parts.push(trimmed);
-    buffer='';
-  };
-
-  for(const char of value){
-    if(char==='('){
-      roundDepth++;
-      buffer+=char;
-      continue;
-    }
-
-    if(char===')'){
-      if(roundDepth>0)roundDepth--;
-      buffer+=char;
-      continue;
-    }
-
-    if(char==='（'){
-      fullWidthDepth++;
-      buffer+=char;
-      continue;
-    }
-
-    if(char==='）'){
-      if(fullWidthDepth>0)fullWidthDepth--;
-      buffer+=char;
-      continue;
-    }
-
-    const isDelimiter=
-      char===',' ||
-      char==='，' ||
-      char==='·' ||
-      char==='ㆍ';
-
-    if(
-      isDelimiter &&
-      roundDepth===0 &&
-      fullWidthDepth===0
-    ){
-      push();
-      continue;
-    }
-
-    buffer+=char;
-  }
-
-  push();
-  return parts;
-}
-
 function splitMeaningFragments(value:string) {
-  return splitMeaningPartsOutsideParentheses(value)
+  return value
+    .split(/[,，·ㆍ]/)
     .map(removeMeaningContext)
     .filter(Boolean);
 }
@@ -253,55 +207,6 @@ function buildMeaningStudyItems(meanings:string[]):MeaningStudyItem[] {
       partIndex,
     }));
   });
-}
-
-// MEANING_ONE_BY_ONE_HINT_V1
-function getOriginalMeaningFragment(
-  meanings:string[],
-  item:MeaningStudyItem,
-) {
-  const rawMeaning=meanings[item.meaningIndex]??'';
-  const rawParts=splitMeaningPartsOutsideParentheses(rawMeaning);
-
-  return (rawParts[item.partIndex]??item.label).trim();
-}
-
-function maskMeaningHintToken(token:string) {
-  // ~, ～, 〜 는 정답 판정에서도 자리 표시자로 취급하므로
-  // 힌트에서도 제거합니다.
-  const cleaned=token.replace(/[~～〜]/g,'');
-  const chars=Array.from(cleaned);
-
-  if(chars.length<=1)return cleaned;
-
-  const first=chars[0];
-  const rest=chars.slice(1).map(char=>
-    /[\p{L}\p{N}]/u.test(char)?'○':char
-  );
-
-  return first+rest.join('');
-}
-
-function makeMeaningHint(value:string) {
-  const normalized=value.normalize('NFKC').trim();
-
-  // 괄호 안은 문맥 설명이므로 그대로 보여줍니다.
-  // 괄호 밖의 실제 정답 부분만 단어별로 가립니다.
-  return normalized
-    .split(/(\([^)]*\)|（[^）]*）)/g)
-    .map(part=>{
-      if(
-        /^\([^)]*\)$/.test(part) ||
-        /^（[^）]*）$/.test(part)
-      ){
-        return part;
-      }
-
-      return part.replace(/[^\s]+/g,token=>
-        maskMeaningHintToken(token)
-      );
-    })
-    .join('');
 }
 
 function matchMeaningFragments(
@@ -439,13 +344,11 @@ export default function Home() {
   const [quiz,setQuiz] = useState<Session|null>(null);
   const [scope,setScope] = useState('due');
   const [quizSize,setQuizSize] = useState('10');
-  const [autoPronunciation,setAutoPronunciation] = useState(false);
   const [answer,setAnswer] = useState('');
   const [meaningInput,setMeaningInput] = useState('');
   const [meaningCompleted,setMeaningCompleted] = useState<string[]>([]);
   const [meaningHadMistake,setMeaningHadMistake] = useState(false);
   const [meaningAttemptMessage,setMeaningAttemptMessage] = useState('');
-  const [meaningHintKeys,setMeaningHintKeys] = useState<string[]>([]);
   const [acceptedTypo,setAcceptedTypo] = useState(false);
   const [acceptedAlternative,setAcceptedAlternative] = useState<Word|null>(null);
   const [revealed,setRevealed] = useState(false);
@@ -456,8 +359,6 @@ export default function Home() {
   const wordInputRef = useRef<HTMLInputElement>(null);
   const typingInputRef = useRef<HTMLInputElement>(null);
   const meaningComposingRef = useRef(false);
-  const meaningSubmitAfterCompositionRef = useRef(false); // MEANING_SINGLE_ENTER_V1
-  const meaningHadMistakeRef = useRef(false); // MEANING_FALSE_WRONG_FIX_V1
   const busyGrade = useRef(false);
   useEffect(()=>{
     try {const raw=localStorage.getItem(STORAGE_KEY); const data=raw ? loadDatabase(raw) : emptyDB; dbRef.current=data; setDB(data);}
@@ -472,17 +373,6 @@ export default function Home() {
     try {setReuseLastCategory(localStorage.getItem(REUSE_LAST_CATEGORY_KEY)==='1');}
     catch {}
   },[]);
-  useEffect(()=>{
-    try {setAutoPronunciation(localStorage.getItem(AUTO_PRONUNCIATION_KEY)==='1');}catch {}
-  },[]);
-  useEffect(()=>()=>stopPronunciation(),[page,quiz?.index,quiz?.mode]);
-  function toggleAutoPronunciation(){
-    const enabled=!autoPronunciation;
-    setAutoPronunciation(enabled);
-    if(!enabled)stopPronunciation();
-    try {localStorage.setItem(AUTO_PRONUNCIATION_KEY,enabled?'1':'0');}
-    catch {setNotice('자동 듣기 설정은 현재 화면에서만 유지됩니다.');}
-  }
   useEffect(()=>{if(!notice)return; const id=setTimeout(()=>setNotice(''),5500);return ()=>clearTimeout(id);},[notice]);
   const modalOpen=!!(editor||detail||deleteId||pendingImport||categoryManager);
   useEffect(()=>{if(modalOpen)modalRef.current?.showModal();else modalRef.current?.close();},[modalOpen]);
@@ -575,7 +465,7 @@ export default function Home() {
   function download(){const blob=new Blob([exportCSV(db.words)],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`leaf-vocabulary-${localDate()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice('단어장 CSV를 내보냈습니다.');}
   async function importFile(file?:File){if(!file)return;try{if(file.size>5*1024*1024)throw new Error('5MB 이하의 CSV 파일을 선택해주세요.');setPendingImport(parseCSV(await file.text()));}catch(err){setNotice(err instanceof Error?err.message:'파일을 읽지 못했습니다.');}finally{if(fileRef.current)fileRef.current.value='';}}
   function acceptImport(){if(!pendingImport)return;const seen=new Set(db.words.map(w=>w.word.toLowerCase()));const additions=pendingImport.words.filter(w=>{const key=w.word.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;});const importedCategories=additions.map(w=>(w.category??'').trim()).filter(Boolean);const categories=[...new Set([...categoryNames,...importedCategories])];if(commit({...db,categories,words:[...additions,...db.words]})){setNotice(`${additions.length}개 단어를 가져왔습니다. ${pendingImport.words.length-additions.length+pendingImport.skipped}개 중복·빈 행은 건너뛰었습니다.`);closeModal();}}
-  function speakWithBrowserTts(word:string,requestId:number){
+  function speakWithBrowserTts(word:string){
     if(!('speechSynthesis' in window)){
       setNotice('이 브라우저에서는 발음 음성을 재생할 수 없습니다.');
       return;
@@ -593,20 +483,18 @@ export default function Home() {
 
       window.clearTimeout(fallback);
       synthesis.removeEventListener('voiceschanged',play);
-      if(requestId!==pronunciationRequest)return;
 
       const utterance=new SpeechSynthesisUtterance(word);
       const voice=preferredEnglishVoice(synthesis.getVoices());
 
-      if(!voice){
-        setNotice(`“${word}”의 사전 녹음을 재생할 수 없습니다. 제공되는 녹음이 없거나 연결이 차단됐을 수 있습니다.`);
-        return;
+      if(voice){
+        utterance.voice=voice;
+        utterance.lang=voice.lang;
+      }else{
+        utterance.lang='en-US';
       }
-      utterance.voice=voice;
-      utterance.lang=voice.lang;
-      setNotice(`사전 음성 대신 ${voice.name} (${voice.lang}) 음성으로 재생합니다.`);
 
-      utterance.rate=1;
+      utterance.rate=.92;
       utterance.pitch=1;
       synthesis.speak(utterance);
     };
@@ -622,7 +510,6 @@ export default function Home() {
   async function speak(word:string){
     const target=word.trim();
     if(!target)return;
-    const requestId=++pronunciationRequest;
 
     if(activePronunciationAudio){
       activePronunciationAudio.pause();
@@ -634,14 +521,32 @@ export default function Home() {
       window.speechSynthesis.cancel();
     }
 
-    for(const source of pronunciationSources(target)){
-      if(requestId!==pronunciationRequest)return;
-      const audio=new Audio(source);
-      let timeout:number|undefined;
-      try{
+    const cacheKey=target.toLocaleLowerCase();
+
+    try{
+      let audioUrl=pronunciationAudioCache.get(cacheKey)??'';
+
+      if(!audioUrl){
+        const response=await fetch(
+          `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(target)}`
+        );
+
+        if(response.ok){
+          const data=await response.json() as DictionaryEntry[];
+          audioUrl=choosePronunciationAudio(Array.isArray(data)?data:[]);
+
+          if(audioUrl){
+            pronunciationAudioCache.set(cacheKey,audioUrl);
+          }
+        }
+      }
+
+      if(audioUrl){
+        const audio=new Audio(audioUrl);
         activePronunciationAudio=audio;
+
         audio.preload='auto';
-        audio.playbackRate=1;
+        audio.playbackRate=.96;
 
         audio.addEventListener('ended',()=>{
           if(activePronunciationAudio===audio){
@@ -649,29 +554,20 @@ export default function Home() {
           }
         },{once:true});
 
-        await Promise.race([
-          audio.play(),
-          new Promise<never>((_,reject)=>{
-            timeout=window.setTimeout(()=>reject(new Error('Audio loading timed out')),6000);
-          }),
-        ]);
-        return;
-      }catch(error){
-        audio.pause();
-        audio.removeAttribute('src');
-        audio.load();
-        if(requestId!==pronunciationRequest)return;
-        if(activePronunciationAudio===audio)activePronunciationAudio=null;
-        if(error instanceof DOMException&&error.name==='NotAllowedError'){
-          setNotice('브라우저에서 오디오 재생이 차단됐습니다. 이 사이트의 소리 재생을 허용하고 다시 눌러주세요.');
+        try{
+          await audio.play();
           return;
+        }catch{
+          if(activePronunciationAudio===audio){
+            activePronunciationAudio=null;
+          }
         }
-      }finally{
-        window.clearTimeout(timeout);
       }
+    }catch{
+      // API/네트워크 실패 시 기존 브라우저 TTS로 fallback
     }
 
-    speakWithBrowserTts(target,requestId);
+    speakWithBrowserTts(target);
   }
   function startQuiz(mode:Mode,retryWords?:Word[]){
     let pool=retryWords??(scope==='due'?due:scope==='wrong'?wrongWords:scope==='favorite'?db.words.filter(w=>w.favorite):scope.startsWith('category:')?db.words.filter(w=>(w.category??'')===scope.slice('category:'.length)):db.words);
@@ -779,10 +675,8 @@ export default function Home() {
 
     setAnswer('');
     setMeaningInput('');
-    setMeaningCompleted([]);setMeaningHintKeys([]);
+    setMeaningCompleted([]);
     setMeaningHadMistake(false);
-    meaningHadMistakeRef.current=false;
-    meaningSubmitAfterCompositionRef.current=false;
     setMeaningAttemptMessage('');
     setAcceptedTypo(false);
     setAcceptedAlternative(null);
@@ -817,32 +711,17 @@ export default function Home() {
     // 따라서 3연속 정답은 서로 다른 퀴즈 세션에서 달성하게 됩니다.
     setGraded(correct);
     setRevealed(true);
-    if(autoPronunciation)void speak(word.word);
     setQuiz({
       ...quiz,
       correct:quiz.correct+(correct?1:0),
       incorrectIds,
     });
   }
-  function nextQuestion(){if(!quiz)return;setQuiz({...quiz,index:quiz.index+1});setGraded(null);setAnswer('');setMeaningInput('');setMeaningCompleted([]);setMeaningHintKeys([]);setMeaningHadMistake(false);meaningHadMistakeRef.current=false;meaningSubmitAfterCompositionRef.current=false;setMeaningAttemptMessage('');setAcceptedTypo(false);setAcceptedAlternative(null);setRevealed(false);busyGrade.current=false;}
+  function nextQuestion(){if(!quiz)return;setQuiz({...quiz,index:quiz.index+1});setGraded(null);setAnswer('');setMeaningInput('');setMeaningCompleted([]);setMeaningHadMistake(false);setMeaningAttemptMessage('');setAcceptedTypo(false);setAcceptedAlternative(null);setRevealed(false);busyGrade.current=false;}
   const current=quiz?.words[quiz.index];
   const currentMeaning=quiz?.meanings?.[quiz.index] ?? current?.meaning ?? '';
   const currentMeanings=current?getMeanings(current):[];
   const currentMeaningItems=buildMeaningStudyItems(currentMeanings);
-  const visibleMeaningHints=currentMeaningItems.filter(
-    item=>
-      meaningHintKeys.includes(item.key) &&
-      !meaningCompleted.includes(item.key)
-  );
-
-  const nextMeaningHintItem=currentMeaningItems.find(
-    item=>
-      !meaningCompleted.includes(item.key) &&
-      !meaningHintKeys.includes(item.key)
-  )??null;
-  const missingMeaningItems=currentMeaningItems.filter(
-    item=>!meaningCompleted.includes(item.key)
-  ); // MEANING_SHOW_MISSING_ANSWERS_V1
   const week=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);const key=localDate(d);return{day:['일','월','화','수','목','금','토'][d.getDay()],count:db.reviews.filter(r=>r.date===key).length,key};});
   return <div className="app-shell">
     <aside className="sidebar"><a className="brand" href="/" aria-label="LEAF 홈"><span className="brand-symbol"><Leaf size={24}/></span>leaf<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'wrong',label:'오답노트',icon:RotateCcw},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}{id==='wrong'&&wrongWords.length>0&&<span className="nav-count wrong-count">{wrongWords.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="little-sprout"><Sprout size={29}/></div><strong>조금씩, 매일, 꾸준히.</strong><p>오늘의 단어가<br/>내일의 나를 넓혀줘요.</p><div className="local-indicator"><span/>이 브라우저에 저장됨</div></div></aside>
@@ -853,7 +732,7 @@ export default function Home() {
     {page==='words'&&<><section className="review-band"><div className="review-copy"><span className="tiny-label"><span className="live-dot"/>DAILY REVIEW</span><h2>{due.length?<>기억이 흐려지기 전에,<br/>오늘의 {due.length}개 단어를 만나볼까요?</>:<>단어 하나에서 시작하는<br/>오늘의 작은 성장.</>}</h2><p>{due.length?'짧은 복습으로 어제의 단어를 오래 기억하세요.':'새로운 단어를 모으거나, 저장한 단어를 다시 만나보세요.'}</p><button className="button dark" onClick={()=>{setPage('study');setScope(due.length?'due':'all');}}>오늘의 학습 시작<ArrowRight size={17}/></button></div><div className="review-visual"><img src="https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=850&q=85" alt="펼친 노트에 펜으로 기록하는 모습"/><div className="image-caption"><span>GROW YOUR VOCABULARY</span><strong>Make every word<br/>a little more yours.</strong></div></div></section>
     <section className="word-section"><div className="section-title"><h2>모든 단어 <span>{db.words.length}</span></h2><div className="actions"><input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={e=>void importFile(e.target.files?.[0])}/><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>setCategoryManager(true)}><Layers size={16}/>카테고리 관리</button><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>fileRef.current?.click()}><FileUp size={16}/>CSV 가져오기</button><button className="button text-button" disabled={!db.words.length} onClick={download}><ArrowDownToLine size={16}/>내보내기</button></div></div><div className="filter-row"><div className="tabs" role="tablist" aria-label="단어 필터">{[{id:'all',label:'전체'},{id:'due',label:'복습할 단어'},{id:'favorite',label:'즐겨찾기'},{id:'mastered',label:'익숙한 단어'}].map(t=><button role="tab" aria-selected={filter===t.id} key={t.id} onClick={()=>setFilter(t.id)} className={filter===t.id?'selected':''}>{t.label}</button>)}</div><div className="search-sort"><select className="category-filter" aria-label="카테고리 필터" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value="all">모든 카테고리</option>{categoryNames.map(category=><option key={category} value={category}>{category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select><label className="search"><Search size={17}/><input aria-label="단어 검색" placeholder="단어, 의미 검색" value={search} onChange={e=>setSearch(e.target.value)}/></label><select aria-label="정렬 순서" value={sort} onChange={e=>setSort(e.target.value)}><option value="new">최근 추가순</option><option value="az">알파벳순</option><option value="due">복습 날짜순</option></select></div></div>
     {!ready?<div className="empty-state">단어장을 불러오는 중...</div>:filtered.length?<div className="word-grid">{filtered.map(w=><article className="word-card" key={w.id}><div className="word-card-top"><div className="word-card-labels"><span className={`status ${w.level>=4?'known':w.level?'learning':''}`}>{w.level>=4?'익숙해요':w.level?'학습 중':'새 단어'}</span>{w.category&&<span className="category-badge">{w.category}</span>}</div><button className={`icon-button favorite ${w.favorite?'is-favorite':''}`} aria-label={`${w.word} 즐겨찾기 ${w.favorite?'해제':'추가'}`} aria-pressed={w.favorite} title="즐겨찾기" onClick={()=>commit({...db,words:db.words.map(item=>item.id===w.id?{...item,favorite:!item.favorite}:item)})}><Star size={17}/></button></div><div className="word-line"><button className="word-link" onClick={()=>setDetail(w)}>{w.word}</button><button className="icon-button" aria-label={`${w.word} 발음 듣기`} title="발음 듣기" onClick={()=>speak(w.word)}><AudioLines size={17}/></button></div><p className="meaning">{w.meaning}</p><p className="example">{getExamples(w)[0]?.text||'아직 등록된 예문이 없어요.'}</p><div className="word-footer"><span><Clock3 size={13}/>{w.due<=now?'오늘 복습':`${new Intl.DateTimeFormat('ko-KR',{month:'short',day:'numeric'}).format(w.due)} 복습`}</span><div className="actions"><button className="icon-button" aria-label={`${w.word} 수정`} title="단어 수정" onClick={()=>setEditor({...w})}><Pencil size={15}/></button><button className="icon-button danger" aria-label={`${w.word} 삭제`} title="단어 삭제" onClick={()=>setDeleteId(w.id)}><Trash2 size={15}/></button></div></div></article>)}</div>:<div className="empty-state"><BookOpen size={34}/><h3>{db.words.length?'조건에 맞는 단어가 없어요.':'첫 번째 단어를 기록해보세요.'}</h3><p>{db.words.length?'검색어나 필터를 바꿔보세요.':'어떤 단어와 함께 시작할까요?'}</p>{!db.words.length&&<div className="actions"><button className="button primary" onClick={()=>setEditor(newWordForEditor())}><Plus size={17}/>단어 추가</button><button className="button" onClick={()=>{if(commit({...db,words:demoWords()}))setNotice('예시 단어 6개를 추가했습니다.');}}>예시 단어로 시작</button></div>}</div>}<div className="list-bottom"><span>{filtered.length}개의 단어</span><span><Leaf size={13}/>오늘도 한 단어만큼 자라는 중</span></div></section></>}
-    {page==='study'&&<section className="study-section"><div className="quiz-audio-setting"><div><strong>?? ?? ? ?? ?? ??</strong><p>??? ?? ?? ??? ??? ? ? ????.</p></div><button type="button" className="button" role="switch" aria-label="?? ?? ? ?? ?? ??" aria-checked={autoPronunciation} disabled={!ready} onClick={toggleAutoPronunciation}><AudioLines size={17}/>{autoPronunciation?'ON':'OFF'}</button></div>{!quiz?<><div className="section-title"><h2>어떻게 학습할까요?</h2><div className="study-options"><label>학습 범위<select aria-label="학습 범위" value={scope} onChange={e=>setScope(e.target.value)}><option value="due">오늘 복습할 단어 ({due.length})</option><option value="all">모든 단어 ({db.words.length})</option><option value="favorite">즐겨찾기 ({db.words.filter(w=>w.favorite).length})</option><option value="wrong">반복 학습 중 ({wrongWords.length})</option>{categoryNames.map(category=><option key={category} value={`category:${category}`}>카테고리 · {category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select></label><label>문제 수<select aria-label="문제 수" value={quizSize} onChange={e=>setQuizSize(e.target.value)}><option value="5">5개</option><option value="10">10개</option><option value="20">20개</option><option value="30">30개</option><option value="all">전체</option></select></label></div></div><div className="mode-grid">{modes.map(({id,name,desc,icon:Icon})=><button key={id} className="mode-card" onClick={()=>startQuiz(id)} disabled={!ready||!!storageError}><span className="mode-icon"><Icon size={28}/></span><h3>{name}</h3><p>{desc}</p><span className="mode-start">학습 시작<ArrowRight size={18}/></span></button>)}</div><div className="study-note"><Sprout size={22}/><span>오늘 {today.length}번 복습했어요. 작은 반복을 이어가세요.</span></div></>:!current?<div className="quiz-result"><span className="result-icon"><Check size={38}/></span><p className="eyebrow">SESSION COMPLETE</p><h2>오늘도 한 걸음 자랐어요.</h2><p>{quiz.words.length}개 중 {quiz.correct}개를 기억했어요.</p><strong>{Math.round(quiz.correct/quiz.words.length*100)}<small>%</small></strong><div className="result-actions"><button className="button primary" onClick={()=>setQuiz(null)}>학습 목록으로<ArrowRight size={17}/></button></div></div>:<div className="quiz-wrap"><div className="quiz-top"><button className="button text-button" onClick={()=>setQuiz(null)}><ArrowLeft size={17}/>학습 종료</button><span>{modes.find(m=>m.id===quiz.mode)?.name} · {quiz.index+1} / {quiz.words.length}</span></div><div className="progress-track"><div style={{width:`${quiz.index/quiz.words.length*100}%`}}/></div><div className="question-area"><p className="eyebrow">{quiz.mode==='typing'?'이 의미의 영어 단어는?':quiz.mode==='meaningTyping'?'기억나는 의미와 표현을 하나씩 입력하세요':quiz.mode==='context'?'빈칸에 들어갈 단어는?':'이 단어의 의미는?'}</p><h2 className={quiz.mode==='context'?'context-question':''}>{quiz.mode==='typing'?currentMeaning:quiz.mode==='context'?maskedExample(current):current.word}</h2>{quiz.mode==='context'&&graded!==null&&getExamples(current)[0]?.translation&&<p className="context-translation">{getExamples(current)[0].translation}</p>}{(quiz.mode!=='typing'&&quiz.mode!=='context'||quiz.mode==='context'&&graded!==null)&&<button className="icon-button" aria-label="발음 듣기" title="발음 듣기" onClick={()=>speak(current.word)}><AudioLines size={23}/></button>}{quiz.mode==='flash'&&(revealed?<div className="revealed-answer"><MeaningList word={current}/><ExampleList word={current}/></div>:<button className="button" onClick={()=>setRevealed(true)}><RotateCcw size={17}/>정답 보기</button>)}{(quiz.mode==='choice'||quiz.mode==='context')&&<div className="choices">{quiz.choices[quiz.index].map((choice,i)=>{const meaning=choiceMeaning(choice);const value=quiz.mode==='context'&&typeof choice!=='string'?choice.word:meaning;return <button key={`${meaning}-${i}`} className={`choice ${graded!==null&&value===(quiz.mode==='context'?current.word:currentMeaning)?'correct':''} ${graded===false&&value===answer?'incorrect':''}`} disabled={graded!==null} onClick={()=>{setAnswer(value);grade(value===(quiz.mode==='context'?current.word:currentMeaning));}}><span className="choice-number">{i+1}</span><ChoiceContent choice={choice} revealed={graded!==null} wordFirst={quiz.mode==='context'}/></button>;})}</div>}{quiz.mode==='typing'&&<form className="typing-form" onSubmit={e=>{e.preventDefault();if(answer.trim()){const normalized=answer.trim().toLowerCase();const exact=normalized===current.word.trim().toLowerCase();const knownWord=!exact?db.words.find(word=>word.id!==current.id&&word.word.trim().toLowerCase()===normalized):undefined;const alternative=knownWord?findEquivalentMeaningAnswer(answer,current,currentMeaning,db.words):null;const spellingAccepted=!exact&&!knownWord?acceptsSpelling(answer,current.word):false;setAcceptedTypo(spellingAccepted);setAcceptedAlternative(alternative);grade(exact||spellingAccepted||!!alternative);}}}><input ref={typingInputRef} aria-label="영어 단어 정답" autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="영어 단어를 입력하세요" value={answer} disabled={graded!==null} onChange={e=>setAnswer(e.target.value)}/><button className="button primary" disabled={!answer.trim()||graded!==null}>정답 확인</button></form>}{quiz.mode==='meaningTyping'&&graded===null&&<div className="meaning-step-study">
+    {page==='study'&&<section className="study-section">{!quiz?<><div className="section-title"><h2>어떻게 학습할까요?</h2><div className="study-options"><label>학습 범위<select aria-label="학습 범위" value={scope} onChange={e=>setScope(e.target.value)}><option value="due">오늘 복습할 단어 ({due.length})</option><option value="all">모든 단어 ({db.words.length})</option><option value="favorite">즐겨찾기 ({db.words.filter(w=>w.favorite).length})</option><option value="wrong">반복 학습 중 ({wrongWords.length})</option>{categoryNames.map(category=><option key={category} value={`category:${category}`}>카테고리 · {category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select></label><label>문제 수<select aria-label="문제 수" value={quizSize} onChange={e=>setQuizSize(e.target.value)}><option value="5">5개</option><option value="10">10개</option><option value="20">20개</option><option value="30">30개</option><option value="all">전체</option></select></label></div></div><div className="mode-grid">{modes.map(({id,name,desc,icon:Icon})=><button key={id} className="mode-card" onClick={()=>startQuiz(id)} disabled={!ready||!!storageError}><span className="mode-icon"><Icon size={28}/></span><h3>{name}</h3><p>{desc}</p><span className="mode-start">학습 시작<ArrowRight size={18}/></span></button>)}</div><div className="study-note"><Sprout size={22}/><span>오늘 {today.length}번 복습했어요. 작은 반복을 이어가세요.</span></div></>:!current?<div className="quiz-result"><span className="result-icon"><Check size={38}/></span><p className="eyebrow">SESSION COMPLETE</p><h2>오늘도 한 걸음 자랐어요.</h2><p>{quiz.words.length}개 중 {quiz.correct}개를 기억했어요.</p><strong>{Math.round(quiz.correct/quiz.words.length*100)}<small>%</small></strong><div className="result-actions"><button className="button primary" onClick={()=>setQuiz(null)}>학습 목록으로<ArrowRight size={17}/></button></div></div>:<div className="quiz-wrap"><div className="quiz-top"><button className="button text-button" onClick={()=>setQuiz(null)}><ArrowLeft size={17}/>학습 종료</button><span>{modes.find(m=>m.id===quiz.mode)?.name} · {quiz.index+1} / {quiz.words.length}</span></div><div className="progress-track"><div style={{width:`${quiz.index/quiz.words.length*100}%`}}/></div><div className="question-area"><p className="eyebrow">{quiz.mode==='typing'?'이 의미의 영어 단어는?':quiz.mode==='meaningTyping'?'기억나는 의미와 표현을 하나씩 입력하세요':quiz.mode==='context'?'빈칸에 들어갈 단어는?':'이 단어의 의미는?'}</p><h2 className={quiz.mode==='context'?'context-question':''}>{quiz.mode==='typing'?currentMeaning:quiz.mode==='context'?maskedExample(current):current.word}</h2>{quiz.mode==='context'&&graded!==null&&getExamples(current)[0]?.translation&&<p className="context-translation">{getExamples(current)[0].translation}</p>}{(quiz.mode!=='typing'&&quiz.mode!=='context'||quiz.mode==='context'&&graded!==null)&&<button className="icon-button" aria-label="발음 듣기" title="발음 듣기" onClick={()=>speak(current.word)}><AudioLines size={23}/></button>}{quiz.mode==='flash'&&(revealed?<div className="revealed-answer"><MeaningList word={current}/><ExampleList word={current}/></div>:<button className="button" onClick={()=>setRevealed(true)}><RotateCcw size={17}/>정답 보기</button>)}{(quiz.mode==='choice'||quiz.mode==='context')&&<div className="choices">{quiz.choices[quiz.index].map((choice,i)=>{const meaning=choiceMeaning(choice);const value=quiz.mode==='context'&&typeof choice!=='string'?choice.word:meaning;return <button key={`${meaning}-${i}`} className={`choice ${graded!==null&&value===(quiz.mode==='context'?current.word:currentMeaning)?'correct':''} ${graded===false&&value===answer?'incorrect':''}`} disabled={graded!==null} onClick={()=>{setAnswer(value);grade(value===(quiz.mode==='context'?current.word:currentMeaning));}}><span className="choice-number">{i+1}</span><ChoiceContent choice={choice} revealed={graded!==null} wordFirst={quiz.mode==='context'}/></button>;})}</div>}{quiz.mode==='typing'&&<form className="typing-form" onSubmit={e=>{e.preventDefault();if(answer.trim()){const normalized=answer.trim().toLowerCase();const exact=normalized===current.word.trim().toLowerCase();const knownWord=!exact?db.words.find(word=>word.id!==current.id&&word.word.trim().toLowerCase()===normalized):undefined;const alternative=knownWord?findEquivalentMeaningAnswer(answer,current,currentMeaning,db.words):null;const spellingAccepted=!exact&&!knownWord?acceptsSpelling(answer,current.word):false;setAcceptedTypo(spellingAccepted);setAcceptedAlternative(alternative);grade(exact||spellingAccepted||!!alternative);}}}><input ref={typingInputRef} aria-label="영어 단어 정답" autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="영어 단어를 입력하세요" value={answer} disabled={graded!==null} onChange={e=>setAnswer(e.target.value)}/><button className="button primary" disabled={!answer.trim()||graded!==null}>정답 확인</button></form>}{quiz.mode==='meaningTyping'&&graded===null&&<div className="meaning-step-study">
       <div className="meaning-step-head">
         <div>
           <strong>{meaningCompleted.length} / {currentMeaningItems.length}</strong>
@@ -890,9 +769,8 @@ export default function Home() {
 
         if(!result.valid){
           setMeaningHadMistake(true);
-          meaningHadMistakeRef.current=true;
           setMeaningAttemptMessage(
-            `‘${value}’은(는) 등록된 남은 의미와 일치하지 않아요. 다른 의미나 표현을 생각해보세요.`
+            '등록된 남은 의미와 일치하지 않아요. 다른 의미나 표현을 생각해보세요.'
           );
           setMeaningInput('');
           requestAnimationFrame(()=>typingInputRef.current?.focus());
@@ -929,9 +807,7 @@ export default function Home() {
 
         if(nextCompleted.length===currentMeaningItems.length){
           setMeaningAttemptMessage('');
-          // 모든 등록 의미/표현을 결국 직접 찾아냈다면 최종 정답입니다.
-          // 중간 오답은 별도의 피드백으로만 남깁니다.
-          grade(true);
+          grade(!meaningHadMistake);
           return;
         }
 
@@ -962,32 +838,11 @@ export default function Home() {
             onCompositionStart={()=>{meaningComposingRef.current=true;}}
             onCompositionEnd={e=>{
               meaningComposingRef.current=false;
-
-              const value=e.currentTarget.value;
-              const form=e.currentTarget.form;
-
-              setMeaningInput(value);
-
-              if(meaningSubmitAfterCompositionRef.current){
-                meaningSubmitAfterCompositionRef.current=false;
-
-                // DOM에 조합 완료 문자열이 반영된 뒤 제출
-                requestAnimationFrame(()=>{
-                  form?.requestSubmit();
-                });
-              }
+              setMeaningInput(e.currentTarget.value);
             }}
             onKeyDown={e=>{
-              if(
-                e.key==='Enter' &&
-                (
-                  e.nativeEvent.isComposing ||
-                  e.nativeEvent.keyCode===229 ||
-                  meaningComposingRef.current
-                )
-              ){
+              if(e.key==='Enter'&&(e.nativeEvent.isComposing||meaningComposingRef.current)){
                 e.preventDefault();
-                meaningSubmitAfterCompositionRef.current=true;
               }
             }}
             onChange={e=>setMeaningInput(e.target.value)}
@@ -1000,24 +855,6 @@ export default function Home() {
             :'meaning-attempt-message'
         }>{meaningAttemptMessage}</p>}
 
-        {visibleMeaningHints.length>0&&<div className="meaning-hint-box">
-          <div className="meaning-hint-title">
-            <span>힌트</span>
-            <small>{visibleMeaningHints.length}개 확인</small>
-          </div>
-
-          <div className="meaning-hint-list">
-            {visibleMeaningHints.map(item=>
-              <div className="meaning-hint-item" key={item.key}>
-                {makeMeaningHint(
-                  getOriginalMeaningFragment(currentMeanings,item)
-                )}
-              </div>
-            )}
-          </div>
-        </div>}
-        
-
         <div className="meaning-step-actions">
           <button
             className="button primary"
@@ -1027,36 +864,10 @@ export default function Home() {
           </button>
 
           <button
-            className="button meaning-hint-button"
-            type="button"
-            disabled={!nextMeaningHintItem}
-            onClick={()=>{
-              if(!nextMeaningHintItem)return;
-
-              setMeaningHintKeys(prev=>
-                prev.includes(nextMeaningHintItem.key)
-                  ?prev
-                  :[...prev,nextMeaningHintItem.key]
-              );
-
-              requestAnimationFrame(()=>
-                typingInputRef.current?.focus()
-              );
-            }}
-          >
-            {nextMeaningHintItem
-              ?meaningHintKeys.length
-                ?'힌트 하나 더 보기'
-                :'힌트 보기'
-              :'모든 힌트를 확인했어요'}
-          </button>
-
-          <button
             className="button text-button"
             type="button"
             onClick={()=>{
               setMeaningHadMistake(true);
-              meaningHadMistakeRef.current=true;
               setMeaningAttemptMessage('');
               grade(false);
             }}
@@ -1068,16 +879,17 @@ export default function Home() {
 
       <p className="meaning-step-note">
         괄호 안의 설명은 입력하지 않아도 돼요.
-        쉼표나 · 로 등록한 표현은 하나씩 맞힐 수 있어요.
-        힌트를 사용해도 오답 처리되지 않으며,
-        등록한 모든 의미와 표현을 직접 입력하면 정답으로 처리해요.
+        쉼표나 · 로 등록한 표현은 하나씩 맞힐 수 있지만,
+        등록한 모든 의미와 표현을 전부 완료해야 이 단어를 정답으로 처리해요.
       </p>
     </div>}{graded!==null?<div className={`feedback ${graded?'positive':'negative'}`}>
       <strong>
         {quiz.mode==='meaningTyping'
           ?graded
             ?'등록한 모든 의미와 표현을 기억했어요!'
-            :'아직 외우지 못한 의미나 표현이 있어요. 다음 퀴즈에서 다시 만나게 됩니다.'
+            :meaningCompleted.length===currentMeaningItems.length
+              ?'모든 항목은 찾아냈지만 중간에 오답이 있었어요. 다음 퀴즈에서 다시 만나게 됩니다.'
+              :'아직 외우지 못한 의미나 표현이 있어요. 다음 퀴즈에서 다시 만나게 됩니다.'
           :graded
             ?acceptedAlternative
               ?`‘${acceptedAlternative.word}’도 같은 의미로 저장되어 있어 정답으로 인정했어요!`
@@ -1091,11 +903,6 @@ export default function Home() {
         ?<>
           <p>등록된 의미: {currentMeanings.join(' · ')}</p>
           <p>이번에 직접 맞힌 항목: {meaningCompleted.length} / {currentMeaningItems.length}</p>
-          {!graded&&missingMeaningItems.length>0&&<div className="meaning-missing-answers">
-            <strong>맞추지 못한 정답</strong>
-            <p>{missingMeaningItems.map(item=>item.label).join(', ')}</p>
-          </div>}
-          
         </>
         :<>
           <p>정답: {current.word} · {currentMeaning}</p>
