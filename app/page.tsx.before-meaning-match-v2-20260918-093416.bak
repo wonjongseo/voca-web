@@ -138,11 +138,11 @@ type MeaningStudyItem = {
   partIndex:number;
 };
 
-// MEANING_INPUT_MATCH_STABILITY_V2
 function removeMeaningContext(value:string) {
+  // 괄호 안의 내용은 문맥 설명으로 보고 암기 대상에서 제외합니다.
+  // 예: "(호텔) 체크인" -> "체크인"
+  //     "(공항) 탑승 수속" -> "탑승 수속"
   return value
-    .normalize('NFKC')
-    .replace(/[\u200B-\u200D\u2060\uFEFF]/g,'')
     .replace(/\([^)]*\)/g,' ')
     .replace(/（[^）]*）/g,' ')
     .replace(/\s+/g,' ')
@@ -150,9 +150,7 @@ function removeMeaningContext(value:string) {
 }
 
 function normalizeMeaningFragment(value:string) {
-  return removeMeaningContext(value)
-    .normalize('NFKC')
-    .toLocaleLowerCase('ko-KR');
+  return removeMeaningContext(value).toLocaleLowerCase();
 }
 
 function splitMeaningFragments(value:string) {
@@ -325,7 +323,6 @@ export default function Home() {
   const modalRef = useRef<HTMLDialogElement>(null);
   const wordInputRef = useRef<HTMLInputElement>(null);
   const typingInputRef = useRef<HTMLInputElement>(null);
-  const meaningComposingRef = useRef(false);
   const busyGrade = useRef(false);
   useEffect(()=>{
     try {const raw=localStorage.getItem(STORAGE_KEY); const data=raw ? loadDatabase(raw) : emptyDB; dbRef.current=data; setDB(data);}
@@ -641,9 +638,8 @@ export default function Home() {
 
       <form className="meaning-typing-form meaning-step-form" onSubmit={e=>{
         e.preventDefault();
-        if(meaningComposingRef.current||graded!==null)return;
 
-        const value=(typingInputRef.current?.value??meaningInput).trim();
+        const value=meaningInput.trim();
         if(!value||graded!==null)return;
 
         const result=matchMeaningFragments(
@@ -720,16 +716,6 @@ export default function Home() {
                 :'의미나 표현을 하나 입력하세요'
             }
             value={meaningInput}
-            onCompositionStart={()=>{meaningComposingRef.current=true;}}
-            onCompositionEnd={e=>{
-              meaningComposingRef.current=false;
-              setMeaningInput(e.currentTarget.value);
-            }}
-            onKeyDown={e=>{
-              if(e.key==='Enter'&&(e.nativeEvent.isComposing||meaningComposingRef.current)){
-                e.preventDefault();
-              }
-            }}
             onChange={e=>setMeaningInput(e.target.value)}
           />
         </label>
