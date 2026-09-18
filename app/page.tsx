@@ -2,11 +2,13 @@
 
 import {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, ChartNoAxesCombined, Check, ChevronRight, CircleHelp, Clock3, FileUp, Flame, Layers, Leaf, Pencil, Plus, RotateCcw, Search, Sprout, Star, Trash2, X} from 'lucide-react';
+import {ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, ChartNoAxesCombined, Check, ChevronRight, CircleHelp, Clock3, Cloud, FileUp, Flame, Layers, Leaf, LogOut, Pencil, Plus, RotateCcw, Search, Sprout, Star, Trash2, Users, X} from 'lucide-react';
 import {cleanEntries, getExamples, getMeanings, getSynonyms, blankWord, demoWords, exportCSV, loadDatabase, localDate, parseCSV, schedule, shuffle, STORAGE_KEY, type Database, type Word} from './lib/vocabulary';
 
 import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from './word-entries';
 import {pronunciationSources} from './lib/pronunciation';
+import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, saveCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
+import type {User} from 'firebase/auth';
 
 type Mode = 'flash'|'choice'|'typing'|'meaningTyping'|'context';
 type QuizChoice = string|{meaning:string;word:string;example:string;translation?:string};
@@ -440,6 +442,12 @@ export default function Home() {
   const [scope,setScope] = useState('due');
   const [quizSize,setQuizSize] = useState('10');
   const [autoPronunciation,setAutoPronunciation] = useState(false);
+  const [firebaseUser,setFirebaseUser] = useState<User|null>(null);
+  const [authEmail,setAuthEmail] = useState('');
+  const [authPassword,setAuthPassword] = useState('');
+  const [cloudScope,setCloudScope] = useState<CloudScope>({type:'personal'});
+  const [groupId,setGroupId] = useState('');
+  const [cloudBusy,setCloudBusy] = useState(false);
   const [answer,setAnswer] = useState('');
   const [meaningInput,setMeaningInput] = useState('');
   const [meaningCompleted,setMeaningCompleted] = useState<string[]>([]);
@@ -455,6 +463,7 @@ export default function Home() {
   const modalRef = useRef<HTMLDialogElement>(null);
   const wordInputRef = useRef<HTMLInputElement>(null);
   const typingInputRef = useRef<HTMLInputElement>(null);
+  const firebaseUserRef = useRef<User|null>(null);
   const meaningComposingRef = useRef(false);
   const meaningSubmitAfterCompositionRef = useRef(false); // MEANING_SINGLE_ENTER_V1
   const meaningHadMistakeRef = useRef(false); // MEANING_FALSE_WRONG_FIX_V1
@@ -475,6 +484,32 @@ export default function Home() {
   useEffect(()=>{
     try {setAutoPronunciation(localStorage.getItem(AUTO_PRONUNCIATION_KEY)==='1');}catch {}
   },[]);
+  useEffect(()=>listenFirebaseUser(user=>{
+    firebaseUserRef.current=user;
+    setFirebaseUser(user);
+    setQuiz(null);
+    setEditor(null);
+    setDetail(null);
+
+    if(!user){
+      try {
+        const raw=localStorage.getItem(STORAGE_KEY);
+        const data=raw ? loadDatabase(raw) : emptyDB;
+        dbRef.current=data;
+        setDB(data);
+      } catch {}
+      return;
+    }
+
+    void loadCloudDatabase(user,{type:'personal'}).then(next=>{
+      dbRef.current=next;
+      setDB(next);
+      setCloudScope({type:'personal'});
+      setNotice('Firebase 단어장을 불러왔습니다.');
+    }).catch(err=>{
+      setNotice(err instanceof Error?err.message:'Firebase 단어장을 불러오지 못했습니다.');
+    });
+  }),[]);
   useEffect(()=>()=>stopPronunciation(),[page,quiz?.index,quiz?.mode]);
   function toggleAutoPronunciation(){
     const enabled=!autoPronunciation;
@@ -498,8 +533,83 @@ export default function Home() {
   },[quiz?.index,quiz?.mode,graded]);
   function commit(next: Database) {
     if(storageError){setNotice('저장소 오류를 해결한 후 다시 시도해주세요.');return false;}
+    const user=firebaseUserRef.current;
+    if(user){
+      const scope=selectedCloudScope();
+      if(!scope){setNotice('그룹 이름을 입력해주세요.');return false;}
+      dbRef.current=next;
+      setDB(next);
+      void saveCloudDatabase(user,scope,next).catch(err=>{
+        setNotice(err instanceof Error?err.message:'Firebase 저장에 실패했습니다.');
+      });
+      return true;
+    }
     try {localStorage.setItem(STORAGE_KEY,JSON.stringify(next));dbRef.current=next;setDB(next);return true;}
     catch{setNotice('저장하지 못했습니다. 브라우저 저장 공간이나 설정을 확인해주세요.');return false;}
+  }
+  function selectedCloudScope():CloudScope|null {
+    if(cloudScope.type==='personal')return cloudScope;
+    const clean=groupId.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+    return clean?{type:'group',groupId:clean}:null;
+  }
+  async function handleEmailAuth(createAccount=false) {
+    if(!authEmail.trim()||!authPassword){setNotice('이메일과 비밀번호를 입력해주세요.');return;}
+    setCloudBusy(true);
+    try {
+      await signInEmail(authEmail.trim(),authPassword,createAccount);
+      setAuthPassword('');
+      setNotice(createAccount?'계정을 만들고 로그인했습니다.':'로그인했습니다.');
+    } catch(err) {
+      setNotice(err instanceof Error?err.message:'로그인하지 못했습니다.');
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+  async function handleGoogleAuth() {
+    setCloudBusy(true);
+    try {
+      await signInGoogle();
+      setNotice('Google 계정으로 로그인했습니다.');
+    } catch(err) {
+      setNotice(err instanceof Error?err.message:'Google 로그인에 실패했습니다.');
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+  async function saveToCloud() {
+    const scope=selectedCloudScope();
+    if(!firebaseUser){setNotice('먼저 로그인해주세요.');return;}
+    if(!scope){setNotice('그룹 이름을 입력해주세요.');return;}
+    setCloudBusy(true);
+    try {
+      await saveCloudDatabase(firebaseUser,scope,dbRef.current);
+      setCloudScope(scope);
+      setNotice(scope.type==='personal'?'내 단어장을 클라우드에 저장했습니다.':'그룹 단어장을 클라우드에 저장했습니다.');
+    } catch(err) {
+      setNotice(err instanceof Error?err.message:'클라우드 저장에 실패했습니다.');
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+  async function loadFromCloud() {
+    const scope=selectedCloudScope();
+    if(!firebaseUser){setNotice('먼저 로그인해주세요.');return;}
+    if(!scope){setNotice('그룹 이름을 입력해주세요.');return;}
+    setCloudBusy(true);
+    try {
+      const next=await loadCloudDatabase(firebaseUser,scope);
+      if(commit(next)){
+        setCloudScope(scope);
+        setQuiz(null);
+        setEditor(null);
+        setDetail(null);
+        setNotice(scope.type==='personal'?'내 클라우드 단어장을 불러왔습니다.':'그룹 단어장을 불러왔습니다.');
+      }
+    } catch(err) {
+      setNotice(err instanceof Error?err.message:'클라우드 불러오기에 실패했습니다.');
+    } finally {
+      setCloudBusy(false);
+    }
   }
   const due=db.words.filter(w=>w.due<=now);
   const relearningByWord=new Map(db.words.map(word=>[word.id,relearningProgress(db.reviews,word.id)]));
@@ -572,7 +682,7 @@ export default function Home() {
       setNotice(exists?'단어를 수정했습니다.':'새로운 단어를 저장했습니다. 계속해서 다음 단어를 추가할 수 있어요.');
     }
   }
-  function download(){const blob=new Blob([exportCSV(db.words)],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`leaf-vocabulary-${localDate()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice('단어장 CSV를 내보냈습니다.');}
+  function download(){const blob=new Blob([exportCSV(db.words)],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`leafy-vocabulary-${localDate()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice('단어장 CSV를 내보냈습니다.');}
   async function importFile(file?:File){if(!file)return;try{if(file.size>5*1024*1024)throw new Error('5MB 이하의 CSV 파일을 선택해주세요.');setPendingImport(parseCSV(await file.text()));}catch(err){setNotice(err instanceof Error?err.message:'파일을 읽지 못했습니다.');}finally{if(fileRef.current)fileRef.current.value='';}}
   function acceptImport(){if(!pendingImport)return;const seen=new Set(db.words.map(w=>w.word.toLowerCase()));const additions=pendingImport.words.filter(w=>{const key=w.word.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;});const importedCategories=additions.map(w=>(w.category??'').trim()).filter(Boolean);const categories=[...new Set([...categoryNames,...importedCategories])];if(commit({...db,categories,words:[...additions,...db.words]})){setNotice(`${additions.length}개 단어를 가져왔습니다. ${pendingImport.words.length-additions.length+pendingImport.skipped}개 중복·빈 행은 건너뛰었습니다.`);closeModal();}}
   function speakWithBrowserTts(word:string,requestId:number){
@@ -845,10 +955,11 @@ export default function Home() {
   ); // MEANING_SHOW_MISSING_ANSWERS_V1
   const week=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);const key=localDate(d);return{day:['일','월','화','수','목','금','토'][d.getDay()],count:db.reviews.filter(r=>r.date===key).length,key};});
   return <div className="app-shell">
-    <aside className="sidebar"><a className="brand" href="/" aria-label="LEAF 홈"><span className="brand-symbol"><Leaf size={24}/></span>leaf<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'wrong',label:'오답노트',icon:RotateCcw},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}{id==='wrong'&&wrongWords.length>0&&<span className="nav-count wrong-count">{wrongWords.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="little-sprout"><Sprout size={29}/></div><strong>조금씩, 매일, 꾸준히.</strong><p>오늘의 단어가<br/>내일의 나를 넓혀줘요.</p><div className="local-indicator"><span/>이 브라우저에 저장됨</div></div></aside>
+    <aside className="sidebar"><a className="brand" href="/" aria-label="Leafy 홈"><span className="brand-symbol"><Leaf size={24}/></span>Leafy<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'wrong',label:'오답노트',icon:RotateCcw},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}{id==='wrong'&&wrongWords.length>0&&<span className="nav-count wrong-count">{wrongWords.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="little-sprout"><Sprout size={29}/></div><strong>조금씩, 매일, 꾸준히.</strong><p>오늘의 단어가<br/>내일의 나를 넓혀줘요.</p><div className="local-indicator"><span/>이 브라우저에 저장됨</div></div></aside>
     <div className="main-area"><header className="topbar"><div><span className="muted">나의 학습 공간</span><ChevronRight size={14}/><span>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':page==='wrong'?'오답노트':'학습 기록'}</span></div><span className="date-label">{new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short'}).format(now)}</span><div className="avatar">L</div></header>
     <main><section className="page-heading"><div><p className="eyebrow">{page==='words'?'WORDS THAT STAY WITH YOU':page==='study'?'A LITTLE PRACTICE, EVERY DAY':page==='wrong'?'WORDS TO MEET AGAIN':'YOUR GROWTH, ONE WORD AT A TIME'}</p><h1>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':page==='wrong'?'오답노트':'학습 기록'}</h1><p>{page==='words'?'발견한 단어를 모아, 나만의 언어로 만들어보세요.':page==='study'?'한 번 더 떠올리는 순간, 단어가 오래 남아요.':page==='wrong'?'틀린 단어는 다음 퀴즈들에 다시 섞여 나오며, 여러 번 맞히면 완료돼요.':'작은 반복이 쌓여, 더 넓은 어휘가 됩니다.'}</p></div>{page==='words'&&<button className="button primary" onClick={()=>setEditor(newWordForEditor())} disabled={!ready||!!storageError}><Plus size={18}/>단어 추가</button>}</section>
     {storageError&&<div role="alert" className="error-banner">{storageError}</div>}
+    <section className="cloud-panel" aria-label="Firebase 클라우드 저장"><div className="cloud-panel-copy"><span className="tiny-label"><Cloud size={14}/> FIREBASE CLOUD</span><h2>{firebaseUser?'클라우드 단어장 연결됨':'로그인하고 단어장을 동기화하세요'}</h2><p>{firebaseConfigured?firebaseUser?`${firebaseUser.email??'로그인한 사용자'} 계정으로 개인 단어장과 그룹 단어장을 저장할 수 있어요.`:'Firebase 로그인 후 개인 단어장과 그룹 공유 단어장을 사용할 수 있어요.':'Firebase 환경변수를 넣으면 로그인과 클라우드 저장이 활성화됩니다.'}</p></div>{firebaseConfigured?firebaseUser?<div className="cloud-actions"><div className="cloud-user"><strong>{firebaseUser.email??'Firebase 사용자'}</strong><button className="button text-button" disabled={cloudBusy} onClick={()=>void signOutFirebase()}><LogOut size={16}/>로그아웃</button></div><div className="cloud-scope" role="radiogroup" aria-label="클라우드 저장 위치"><label><input type="radio" checked={cloudScope.type==='personal'} onChange={()=>setCloudScope({type:'personal'})}/>내 단어장</label><label><input type="radio" checked={cloudScope.type==='group'} onChange={()=>setCloudScope({type:'group',groupId:groupId.trim()})}/><Users size={15}/>그룹</label>{cloudScope.type==='group'&&<input aria-label="그룹 이름" placeholder="group-name" value={groupId} onChange={e=>setGroupId(e.target.value)}/>}</div><div className="cloud-buttons"><button className="button" disabled={cloudBusy} onClick={()=>void loadFromCloud()}>클라우드 불러오기</button><button className="button primary" disabled={cloudBusy} onClick={()=>void saveToCloud()}>현재 단어장 저장</button></div></div>:<div className="cloud-login"><input type="email" aria-label="이메일" placeholder="email@example.com" value={authEmail} onChange={e=>setAuthEmail(e.target.value)}/><input type="password" aria-label="비밀번호" placeholder="비밀번호" value={authPassword} onChange={e=>setAuthPassword(e.target.value)}/><div className="cloud-buttons"><button className="button" disabled={cloudBusy} onClick={()=>void handleEmailAuth(false)}>로그인</button><button className="button" disabled={cloudBusy} onClick={()=>void handleEmailAuth(true)}>가입</button><button className="button primary" disabled={cloudBusy} onClick={()=>void handleGoogleAuth()}>Google 로그인</button></div></div>:<div className="cloud-disabled"><code>.env</code><span>Firebase 설정 필요</span></div>}</section>
     <section className="summary-strip" aria-label="학습 요약"><div><span className="stat-icon green"><BookOpen size={20}/></span><div><span>저장한 단어</span><strong>{db.words.length}<small>개</small></strong></div></div><div><span className="stat-icon coral"><RotateCcw size={20}/></span><div><span>오늘 복습할 단어</span><strong>{due.length}<small>개</small></strong></div></div><div><span className="stat-icon violet"><Check size={20}/></span><div><span>익숙해진 단어</span><strong>{mastered}<small>개</small></strong></div></div><div><span className="stat-icon yellow"><Flame size={20}/></span><div><span>연속 학습</span><strong>{streak}<small>일</small></strong></div></div></section>
     {page==='words'&&<><section className="review-band"><div className="review-copy"><span className="tiny-label"><span className="live-dot"/>DAILY REVIEW</span><h2>{due.length?<>기억이 흐려지기 전에,<br/>오늘의 {due.length}개 단어를 만나볼까요?</>:<>단어 하나에서 시작하는<br/>오늘의 작은 성장.</>}</h2><p>{due.length?'짧은 복습으로 어제의 단어를 오래 기억하세요.':'새로운 단어를 모으거나, 저장한 단어를 다시 만나보세요.'}</p><button className="button dark" onClick={()=>{setPage('study');setScope(due.length?'due':'all');}}>오늘의 학습 시작<ArrowRight size={17}/></button></div><div className="review-visual"><img src="https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=850&q=85" alt="펼친 노트에 펜으로 기록하는 모습"/><div className="image-caption"><span>GROW YOUR VOCABULARY</span><strong>Make every word<br/>a little more yours.</strong></div></div></section>
     <section className="word-section"><div className="section-title"><h2>모든 단어 <span>{db.words.length}</span></h2><div className="actions"><input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={e=>void importFile(e.target.files?.[0])}/><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>setCategoryManager(true)}><Layers size={16}/>카테고리 관리</button><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>fileRef.current?.click()}><FileUp size={16}/>CSV 가져오기</button><button className="button text-button" disabled={!db.words.length} onClick={download}><ArrowDownToLine size={16}/>내보내기</button></div></div><div className="filter-row"><div className="tabs" role="tablist" aria-label="단어 필터">{[{id:'all',label:'전체'},{id:'due',label:'복습할 단어'},{id:'favorite',label:'즐겨찾기'},{id:'mastered',label:'익숙한 단어'}].map(t=><button role="tab" aria-selected={filter===t.id} key={t.id} onClick={()=>setFilter(t.id)} className={filter===t.id?'selected':''}>{t.label}</button>)}</div><div className="search-sort"><select className="category-filter" aria-label="카테고리 필터" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value="all">모든 카테고리</option>{categoryNames.map(category=><option key={category} value={category}>{category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select><label className="search"><Search size={17}/><input aria-label="단어 검색" placeholder="단어, 의미 검색" value={search} onChange={e=>setSearch(e.target.value)}/></label><select aria-label="정렬 순서" value={sort} onChange={e=>setSort(e.target.value)}><option value="new">최근 추가순</option><option value="az">알파벳순</option><option value="due">복습 날짜순</option></select></div></div>
@@ -1168,7 +1279,7 @@ export default function Home() {
       </div>}
     </section>}
     {page==='stats'&&<section className="stats-section"><div className="section-title"><h2>이번 주의 꾸준함</h2><span className="muted">최근 7일</span></div><div className="chart" role="img" aria-label={week.map(d=>`${d.day}요일 ${d.count}회`).join(', ')}>{week.map(d=><div className="bar-column" key={d.key}><span>{d.count}</span><div className="bar-track"><div className={d.key===localDate()?'bar today':'bar'} style={{height:`${d.count?Math.max(4,d.count/Math.max(1,...week.map(x=>x.count))*100):0}%`}}/></div><span>{d.day}</span></div>)}</div><div className="history-summary"><div><span>누적 복습</span><strong>{db.reviews.length}<small>회</small></strong></div><div><span>전체 정답률</span><strong>{db.reviews.length?Math.round(db.reviews.filter(r=>r.correct).length/db.reviews.length*100):0}<small>%</small></strong></div><div><span>오늘의 복습</span><strong>{today.length}<small>회</small></strong></div></div><h2 className="history-title">최근 학습</h2>{db.reviews.length?<div className="history-list">{db.reviews.slice(-12).reverse().map((r,i)=><div key={`${r.wordId}-${i}`}><span className={`history-dot ${r.correct?'success':''}`}>{r.correct?<Check size={16}/>:<RotateCcw size={16}/>}</span><strong>{db.words.find(w=>w.id===r.wordId)?.word||'삭제된 단어'}</strong><span>{r.correct?'기억했어요':'다시 학습'}</span><time>{r.date}</time></div>)}</div>:<div className="empty-state"><ChartNoAxesCombined size={32}/><h3>아직 학습 기록이 없어요.</h3><button className="button primary" onClick={()=>setPage('study')}>첫 학습 시작<ArrowRight size={16}/></button></div>}</section>}
-    <footer><span>leaf. 작은 단어가 만드는 큰 변화</span><span>나만의 어휘, 나만의 속도로.</span></footer></main></div>
+    <footer><span>Leafy. 작은 단어가 만드는 큰 변화</span><span>나만의 어휘, 나만의 속도로.</span></footer></main></div>
     <dialog ref={modalRef} onCancel={closeModal} onClick={e=>{if(e.target===e.currentTarget)closeModal();}} aria-labelledby="modal-title"><div className="modal"><button className="icon-button modal-close" onClick={closeModal} aria-label="닫기" title="닫기"><X size={21}/></button>{editor?<><p className="eyebrow">MY VOCABULARY</p><h2 id="modal-title">{db.words.some(w=>w.id===editor.id)?'단어 수정':'새로운 단어'}</h2><form onSubmit={saveWord} onKeyDown={event=>{if(event.ctrlKey&&event.key==='Enter'&&!event.nativeEvent.isComposing){event.preventDefault();event.currentTarget.requestSubmit();}}} className="word-form">{[{key:'word',label:'영단어',required:true}].map(({key,label,required})=><label key={key}>{label}{required&&<span className="required"> *</span>}<input ref={wordInputRef} autoFocus={key==='word'} required={required} maxLength={key==='word'?120:2000} value={String(editor[key as keyof Word])} onChange={e=>setEditor({...editor,[key]:e.target.value})}/></label>)}<WordEntriesEditor word={editor} onChange={setEditor}/><label>카테고리<select value={editor.category??''} onChange={e=>setEditor({...editor,category:e.target.value})}><option value="">미분류</option>{categoryNames.map(category=><option key={category} value={category}>{category}</option>)}</select></label>{!db.words.some(word=>word.id===editor.id)&&<label className="reuse-category-option"><input type="checkbox" checked={reuseLastCategory} onChange={e=>setReuseCategoryPreference(e.target.checked)}/><span>직전 단어의 카테고리를 자동으로 사용</span>{reuseLastCategory&&<small>{lastSavedCategory?`현재 기준: ${lastSavedCategory}`:'현재 기준: 미분류'}</small>}</label>}<label>메모<textarea rows={3} maxLength={5000} value={editor.memo} onChange={e=>setEditor({...editor,memo:e.target.value})}/></label><div className="modal-footer"><button type="button" className="button" onClick={closeModal}>취소</button><button type="submit" className="button primary"><Check size={17}/>단어 저장</button></div></form></>:detail?<><p className="eyebrow">WORD DETAILS</p><h2 id="modal-title" className="detail-word">{detail.word}</h2>{detail.category&&<div className="detail-category"><span className="category-badge">{detail.category}</span></div>}<MeaningList word={detail}/><WordEntriesDetails word={detail}/><div className="modal-footer split"><button className="button danger" onClick={()=>{setDeleteId(detail.id);setDetail(null);}}><Trash2 size={16}/>삭제</button><button className="button primary" onClick={()=>{setEditor({...detail});setDetail(null);}}><Pencil size={16}/>수정</button></div></>:deleteId?<><h2 id="modal-title">단어를 삭제할까요?</h2><p>‘{db.words.find(w=>w.id===deleteId)?.word}’ 단어가 단어장에서 삭제됩니다.</p><div className="modal-footer"><button className="button" onClick={closeModal}>취소</button><button className="button danger" onClick={()=>{if(commit({...db,words:db.words.filter(w=>w.id!==deleteId)})){closeModal();setNotice('단어를 삭제했습니다.');}}}>삭제</button></div></>:categoryManager?<><p className="eyebrow">WORD CATEGORIES</p><h2 id="modal-title">카테고리 관리</h2><p className="muted">단어를 주제별로 묶고, 카테고리별로 따로 학습할 수 있어요.</p><div className="category-add-row"><input aria-label="새 카테고리 이름" placeholder="예: TOEIC, Part 5, 회사 영어" maxLength={60} value={newCategory} onChange={e=>setNewCategory(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();addCategory();}}}/><button type="button" className="button primary" onClick={addCategory}><Plus size={16}/>추가</button></div>{categoryNames.length?<div className="category-list">{categoryNames.map(category=><div className="category-row" key={category}><div><strong>{category}</strong><span>{db.words.filter(w=>(w.category??'')===category).length}개 단어</span></div><div className="actions"><button type="button" className="icon-button" aria-label={`${category} 이름 변경`} title="이름 변경" onClick={()=>renameCategory(category)}><Pencil size={15}/></button><button type="button" className="icon-button danger" aria-label={`${category} 삭제`} title="카테고리 삭제" onClick={()=>deleteCategory(category)}><Trash2 size={15}/></button></div></div>)}</div>:<div className="category-empty">아직 만든 카테고리가 없어요.</div>}<div className="modal-footer"><button type="button" className="button primary" onClick={closeModal}>완료</button></div></>:pendingImport?<><p className="eyebrow">CSV IMPORT</p><h2 id="modal-title">단어 가져오기</h2><p>{pendingImport.words.length}개 단어를 찾았습니다.</p><p className="muted">중복 단어와 단어·의미가 비어 있는 행은 건너뜁니다. 기존 단어는 유지됩니다.</p><div className="import-preview">{pendingImport.words.slice(0,5).map(w=><div key={w.id}><strong>{w.word}</strong><span>{w.meaning}</span></div>)}</div><div className="modal-footer"><button className="button" onClick={closeModal}>취소</button><button className="button primary" onClick={acceptImport}><FileUp size={16}/>가져오기</button></div></>:null}</div></dialog>
     {notice&&createPortal(<div className="toast" role="status">{notice}<button className="icon-button" aria-label="알림 닫기" onClick={()=>setNotice('')}><X size={17}/></button></div>,modalOpen&&modalRef.current?modalRef.current:document.body)}
   </div>;
