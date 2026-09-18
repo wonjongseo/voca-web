@@ -784,7 +784,7 @@ export default function Home() {
         {quiz.index+1===quiz.words.length?'결과 보기':'다음 단어'}
         <ArrowRight size={17}/>
       </button>
-    </div>:quiz.mode==='flash'&&revealed&&<div className="self-grade"><button className="button" onClick={()=>grade(false)}><RotateCcw size={17}/>다시 볼게요</button><button className="button primary" onClick={()=>grade(true)}><Check size={17}/>기억했어요</button></div>}</div></div>}</section>}
+    </div>}:quiz.mode==='flash'&&revealed&&<div className="self-grade"><button className="button" onClick={()=>grade(false)}><RotateCcw size={17}/>다시 볼게요</button><button className="button primary" onClick={()=>grade(true)}><Check size={17}/>기억했어요</button></div>}</div></div>}</section>}
 
     {/* RELEARNING_BETWEEN_QUIZZES_V1 */}
     {page==='wrong'&&<section className="wrong-section">

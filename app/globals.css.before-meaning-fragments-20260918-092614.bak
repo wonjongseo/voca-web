@@ -245,10 +245,3 @@
     flex-direction:column;
   }
 }
-
-
-/* MEANING_TYPING_FRAGMENTS_V1 */
-.meaning-attempt-message.success{
-  background:#f2f7f3;
-  color:#55735f;
-}
