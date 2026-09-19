@@ -17,9 +17,7 @@ const QUIZ_HISTORY_KEY = 'leaf-quiz-history-v1';
 const AUTO_PRONUNCIATION_KEY = 'leaf-quiz-auto-pronunciation-v1';
 const REUSE_LAST_CATEGORY_KEY = 'leaf-reuse-last-category-v1'; // REUSE_LAST_CATEGORY_V1
 const CLOUD_PENDING_PREFIX='leaf-cloud-pending-v2';
-const LOCAL_DIRTY_KEY='leaf-local-dirty-v1';
-const CATEGORY_SNAPSHOT_KEY='leaf-category-snapshot-v1'; // CATEGORY_AUTH_PERSISTENCE_V1
-const CATEGORY_DIRTY_KEY='leaf-category-dirty-v1'; // OFFLINE_LOGIN_MERGE_V1
+const LOCAL_DIRTY_KEY='leaf-local-dirty-v1'; // OFFLINE_LOGIN_MERGE_V1
 const LAST_CLOUD_UID_KEY='leaf-last-cloud-uid-v1';
 const LOCAL_ACCOUNT_BACKUP_PREFIX='leaf-local-account-backup-v1'; // CLOUD_SAVE_DURABILITY_V2
 const WORDS_PER_PAGE=24; // WORD_LIST_PAGINATION_V4
@@ -498,101 +496,6 @@ function mergeDatabasesForLogin(cloud:Database,local:Database):Database {
   };
 }
 
-function normalizedCategories(database:Database){
-  return [...new Set([
-    ...(database.categories??[]),
-    ...database.words.map(word=>(word.category??'').trim()).filter(Boolean),
-  ])].sort((a,b)=>a.localeCompare(b,'ko'));
-}
-
-function categoryListKey(database:Database){
-  return JSON.stringify(normalizedCategories(database));
-}
-
-function readCategorySnapshot(){
-  try {
-    const raw=localStorage.getItem(CATEGORY_SNAPSHOT_KEY);
-    if(!raw)return null;
-
-    const parsed=JSON.parse(raw) as {
-      ownerUid?:unknown;
-      categories?:unknown;
-    };
-
-    if(
-      !Array.isArray(parsed.categories) ||
-      !parsed.categories.every(item=>typeof item==='string')
-    ){
-      return null;
-    }
-
-    return {
-      ownerUid:typeof parsed.ownerUid==='string'?parsed.ownerUid:null,
-      categories:[...new Set(parsed.categories.map(item=>item.trim()).filter(Boolean))],
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeCategorySnapshot(database:Database,ownerUid:string|null){
-  const snapshot={
-    ownerUid,
-    categories:normalizedCategories(database),
-  };
-  localStorage.setItem(CATEGORY_SNAPSHOT_KEY,JSON.stringify(snapshot));
-}
-
-function mergeCategorySnapshot(
-  database:Database,
-  uid:string|null,
-  allowAnyOwner=false,
-){
-  const snapshot=readCategorySnapshot();
-  if(!snapshot)return database;
-
-  if(
-    !allowAnyOwner &&
-    snapshot.ownerUid &&
-    snapshot.ownerUid!==uid
-  ){
-    return database;
-  }
-
-  return {
-    ...database,
-    categories:[...new Set([
-      ...normalizedCategories(database),
-      ...snapshot.categories,
-    ])],
-  };
-}
-
-function categoryDirty(){
-  try {
-    return localStorage.getItem(CATEGORY_DIRTY_KEY)==='1';
-  } catch {
-    return false;
-  }
-}
-
-function clearCategoryDirtyIfSaved(uid:string,database:Database){
-  try {
-    const snapshot=readCategorySnapshot();
-    if(!snapshot)return;
-
-    const sameOwner=!snapshot.ownerUid||snapshot.ownerUid===uid;
-    const sameCategories=
-      JSON.stringify(snapshot.categories.slice().sort((a,b)=>a.localeCompare(b,'ko')))===
-      categoryListKey(database);
-
-    if(sameOwner&&sameCategories){
-      localStorage.removeItem(CATEGORY_DIRTY_KEY);
-      writeCategorySnapshot(database,uid);
-    }
-  } catch {}
-}
-
 function rememberQuizWords(mode:Mode,pool:Word[],words:Word[]) {
   const history=readQuizHistory();
   const poolIds=new Set(pool.map(word=>word.id));
@@ -659,7 +562,7 @@ export default function Home() {
   const meaningHadMistakeRef = useRef(false); // MEANING_FALSE_WRONG_FIX_V1
   const busyGrade = useRef(false);
   useEffect(()=>{
-    try {const raw=localStorage.getItem(STORAGE_KEY); let data=raw ? loadDatabase(raw) : emptyDB; const lastUid=localStorage.getItem(LAST_CLOUD_UID_KEY); if(categoryDirty())data=mergeCategorySnapshot(data,lastUid||null,true); if(!readCategorySnapshot()&&normalizedCategories(data).length)writeCategorySnapshot(data,lastUid||null); dbRef.current=data; setDB(data);}
+    try {const raw=localStorage.getItem(STORAGE_KEY); const data=raw ? loadDatabase(raw) : emptyDB; dbRef.current=data; setDB(data);}
     catch(err){setStorageError(err instanceof Error ? err.message : '브라우저 저장소에 접근할 수 없습니다.');}
     setReady(true);
     const timer=setInterval(()=>setNow(Date.now()),30000);
@@ -684,12 +587,7 @@ export default function Home() {
     if(!user){
       try {
         const raw=localStorage.getItem(STORAGE_KEY);
-        let data=raw ? loadDatabase(raw) : emptyDB;
-        if(categoryDirty()){
-          const lastUid=localStorage.getItem(LAST_CLOUD_UID_KEY);
-          data=mergeCategorySnapshot(data,lastUid||null,true);
-          localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
-        }
+        const data=raw ? loadDatabase(raw) : emptyDB;
         dbRef.current=data;
         setDB(data);
       } catch {}
@@ -725,11 +623,6 @@ export default function Home() {
         next=mergeDatabasesForLogin(next,localDatabase);
       }
 
-      const hasCategoryDirty=categoryDirty();
-      if(hasCategoryDirty){
-        next=mergeCategorySnapshot(next,user.uid);
-      }
-
       try {
         if(localDirty&&lastCloudUid&&lastCloudUid!==user.uid){
           localStorage.setItem(
@@ -747,7 +640,7 @@ export default function Home() {
       setDB(next);
       setCloudScope(personalScope);
 
-      if(pending||canMergeLocal||hasCategoryDirty){
+      if(pending||canMergeLocal){
         queueCloudSave(user,personalScope,next);
         setNotice(
           canMergeLocal
@@ -801,7 +694,6 @@ export default function Home() {
         try {
           await saveCloudDatabase(user,scope,next);
           clearPendingCloudDatabase(user.uid,scope,serialized);
-          if(scope.type==='personal')clearCategoryDirtyIfSaved(user.uid,next);
           if(scope.type==='personal')localStorage.removeItem(LOCAL_DIRTY_KEY);
         } catch(err) {
           setNotice(
@@ -827,17 +719,8 @@ export default function Home() {
       return false;
     }
 
-    const trackCategoryPersistence=!user||scope?.type==='personal';
-    const categoriesChanged=
-      trackCategoryPersistence&&
-      categoryListKey(dbRef.current)!==categoryListKey(next);
-
     try {
       localStorage.setItem(STORAGE_KEY,JSON.stringify(next));
-      if(categoriesChanged){
-        writeCategorySnapshot(next,user?.uid??null);
-        localStorage.setItem(CATEGORY_DIRTY_KEY,'1');
-      }
       if(!user)localStorage.setItem(LOCAL_DIRTY_KEY,'1');
     } catch {
       setNotice('저장하지 못했습니다. 브라우저 저장 공간이나 설정을 확인해주세요.');
@@ -896,7 +779,6 @@ export default function Home() {
 
       await saveCloudDatabase(firebaseUser,scope,current);
       clearPendingCloudDatabase(firebaseUser.uid,scope,serialized);
-      if(scope.type==='personal')clearCategoryDirtyIfSaved(firebaseUser.uid,current);
       if(scope.type==='personal')localStorage.removeItem(LOCAL_DIRTY_KEY);
 
       setCloudScope(scope);
@@ -914,10 +796,7 @@ export default function Home() {
     setCloudBusy(true);
     try {
       await cloudSaveQueueRef.current.catch(()=>{});
-      let next=await loadCloudDatabase(firebaseUser,scope);
-      if(scope.type==='personal'&&categoryDirty()){
-        next=mergeCategorySnapshot(next,firebaseUser.uid);
-      }
+      const next=await loadCloudDatabase(firebaseUser,scope);
       if(commit(next)){
         setCloudScope(scope);
         setQuiz(null);

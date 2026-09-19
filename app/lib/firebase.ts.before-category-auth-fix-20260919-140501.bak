@@ -166,19 +166,10 @@ export async function loadCloudDatabase(user:User,scope:CloudScope):Promise<Data
   ]);
 
   const rootData=rootSnap.data() as Partial<Database>|undefined;
-  const words=wordSnap.docs.map(item=>item.data() as Word);
-  const storedCategories=Array.isArray(rootData?.categories)
-    ?rootData.categories.filter((item):item is string=>typeof item==='string')
-    :[];
-  const categories=[...new Set([
-    ...storedCategories,
-    ...words.map(word=>(word.category??'').trim()).filter(Boolean),
-  ])];
-
   return {
     version:1,
-    categories,
-    words,
+    categories:Array.isArray(rootData?.categories)?rootData.categories.filter((item):item is string=>typeof item==='string'):[],
+    words:wordSnap.docs.map(item=>item.data() as Word),
     reviews:reviewSnap.docs.map(item=>item.data() as Review),
   };
 }
