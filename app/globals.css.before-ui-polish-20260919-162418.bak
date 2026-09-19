@@ -231,7 +231,7 @@
   text-align:left;
 }
 .meaning-step-note{
-  margin:13px 0 96px;
+  margin:13px 0 0;
   color:#909991;
   font-size:9px;
   line-height:1.65;
@@ -330,88 +330,26 @@
   cursor:default;
 }
 .quiz-audio-setting{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin-bottom:24px;border:1px solid var(--line);border-radius:8px;background:#f5f8f2}.quiz-audio-setting strong{font-size:13px}.quiz-audio-setting p{margin:5px 0 0;font-size:12px;color:#71816b;line-height:1.5}.quiz-audio-setting button{flex-shrink:0;min-width:84px}.quiz-audio-setting button[aria-checked="true"]{background:#365b40;color:white;border-color:#365b40}
-/* CLOUD_ACCOUNT_TOPBAR_V1 */
-.cloud-account-menu{
-  position:relative;
-  flex-shrink:0;
-}
-.cloud-account-menu>summary{
-  list-style:none;
-}
-.cloud-account-menu>summary::-webkit-details-marker{
-  display:none;
-}
-.cloud-account-trigger{
-  display:flex;
+.cloud-panel{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(280px,460px);
+  gap:18px;
   align-items:center;
-  gap:7px;
-  max-width:230px;
-  min-height:34px;
-  padding:7px 10px;
-  border:1px solid #e0e6e0;
-  border-radius:999px;
-  background:#fbfcfa;
-  color:#5d6f63;
-  cursor:pointer;
-  user-select:none;
-}
-.cloud-account-trigger:hover{
-  border-color:#bfd0c3;
-  background:#f3f7f3;
-  color:#365644;
-}
-.cloud-account-trigger span{
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:11px;
-  font-weight:600;
-}
-.cloud-account-menu[open] .cloud-account-trigger{
-  border-color:#a9c0af;
-  background:#edf4ef;
-  color:#315741;
-}
-.cloud-account-popover{
-  position:absolute;
-  top:calc(100% + 10px);
-  right:0;
-  z-index:40;
-  width:min(390px,calc(100vw - 32px));
+  margin-bottom:18px;
   padding:18px;
-  border:1px solid #dfe6df;
-  border-radius:10px;
-  background:#fff;
-  box-shadow:0 16px 45px rgba(34,58,43,.16);
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#fbfcf8;
 }
-.cloud-account-popover-head{
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
-  gap:12px;
-  padding-bottom:14px;
-  margin-bottom:14px;
-  border-bottom:1px solid #edf1ed;
+.cloud-panel-copy h2{
+  margin:8px 0 6px;
+  font-size:18px;
 }
-.cloud-account-popover-head>div{
-  min-width:0;
-}
-.cloud-account-popover-head strong{
-  display:block;
-  margin-top:7px;
-  color:#354c3d;
-  font-size:15px;
-}
-.cloud-account-email{
-  display:block;
-  max-width:245px;
-  margin-top:5px;
-  overflow:hidden;
-  color:#829087;
-  font-size:10px;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+.cloud-panel-copy p{
+  margin:0;
+  color:#71816b;
+  font-size:13px;
+  line-height:1.55;
 }
 .cloud-login,.cloud-actions{
   display:grid;
@@ -426,51 +364,42 @@
   background:#fff;
   color:#263327;
 }
-.cloud-buttons,.cloud-scope{
+.cloud-buttons,.cloud-user,.cloud-scope{
   display:flex;
   flex-wrap:wrap;
   gap:8px;
   align-items:center;
 }
-.cloud-buttons .button{
-  flex:1;
+.cloud-user{
+  justify-content:space-between;
 }
-.cloud-scope{
-  padding:4px 0;
+.cloud-user strong{
+  font-size:13px;
+  color:#435846;
 }
 .cloud-scope label{
   display:flex;
   align-items:center;
   gap:6px;
-  font-size:12px;
+  font-size:13px;
   color:#526657;
-}
-.cloud-scope input:not([type="radio"]){
-  flex-basis:100%;
 }
 .cloud-disabled{
   display:flex;
   align-items:center;
+  justify-content:flex-end;
   gap:10px;
   color:#71816b;
-  font-size:12px;
+  font-size:13px;
 }
 .cloud-disabled code{
   padding:4px 7px;
   border-radius:6px;
   background:#eef3ed;
 }
-@media(max-width:720px){
-  .cloud-account-trigger span{
-    display:none;
-  }
-  .cloud-account-trigger{
-    width:34px;
-    justify-content:center;
-    padding:7px;
-  }
-  .cloud-account-popover{
-    right:-38px;
+@media (max-width:900px){
+  .cloud-panel{
+    grid-template-columns:1fr;
   }
 }
 
