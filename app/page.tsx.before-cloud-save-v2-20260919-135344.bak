@@ -16,7 +16,6 @@ type Session = {mode: Mode; words: Word[]; meanings: string[]; index: number; co
 const QUIZ_HISTORY_KEY = 'leaf-quiz-history-v1';
 const AUTO_PRONUNCIATION_KEY = 'leaf-quiz-auto-pronunciation-v1';
 const REUSE_LAST_CATEGORY_KEY = 'leaf-reuse-last-category-v1'; // REUSE_LAST_CATEGORY_V1
-const CLOUD_PENDING_PREFIX='leaf-cloud-pending-v2'; // CLOUD_SAVE_DURABILITY_V2
 const WORDS_PER_PAGE=24; // WORD_LIST_PAGINATION_V4
 // RELEARNING_FEATURE_V2
 const RELEARNING_STREAK_TARGET=3;
@@ -407,35 +406,6 @@ function selectBalancedWords(mode:Mode,pool:Word[],limit:number) {
   return [...unseen,...seenWords].slice(0,limit);
 }
 
-function cloudPendingKey(uid:string,scope:CloudScope){
-  const scopeKey=scope.type==='personal'?'personal':`group:${scope.groupId}`;
-  return `${CLOUD_PENDING_PREFIX}:${uid}:${scopeKey}`;
-}
-
-function readPendingCloudDatabase(uid:string,scope:CloudScope):Database|null {
-  try {
-    const raw=localStorage.getItem(cloudPendingKey(uid,scope));
-    return raw?loadDatabase(raw):null;
-  } catch {
-    return null;
-  }
-}
-
-function writePendingCloudDatabase(uid:string,scope:CloudScope,database:Database){
-  const serialized=JSON.stringify(database);
-  localStorage.setItem(cloudPendingKey(uid,scope),serialized);
-  return serialized;
-}
-
-function clearPendingCloudDatabase(uid:string,scope:CloudScope,expectedSerialized:string){
-  try {
-    const key=cloudPendingKey(uid,scope);
-    if(localStorage.getItem(key)===expectedSerialized){
-      localStorage.removeItem(key);
-    }
-  } catch {}
-}
-
 function rememberQuizWords(mode:Mode,pool:Word[],words:Word[]) {
   const history=readQuizHistory();
   const poolIds=new Set(pool.map(word=>word.id));
@@ -496,7 +466,6 @@ export default function Home() {
   const wordInputRef = useRef<HTMLInputElement>(null);
   const typingInputRef = useRef<HTMLInputElement>(null);
   const firebaseUserRef = useRef<User|null>(null);
-  const cloudSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const meaningComposingRef = useRef(false);
   const meaningSubmitAfterCompositionRef = useRef(false); // MEANING_SINGLE_ENTER_V1
   const meaningHadMistakeRef = useRef(false); // MEANING_FALSE_WRONG_FIX_V1
@@ -534,30 +503,10 @@ export default function Home() {
       return;
     }
 
-    const personalScope:CloudScope={type:'personal'};
-    const pending=readPendingCloudDatabase(user.uid,personalScope);
-
-    if(pending){
-      try {
-        localStorage.setItem(STORAGE_KEY,JSON.stringify(pending));
-      } catch {}
-
-      dbRef.current=pending;
-      setDB(pending);
-      setCloudScope(personalScope);
-      queueCloudSave(user,personalScope,pending);
-      setNotice('저장 중이던 단어장을 복구하고 Firebase에 다시 동기화하고 있습니다.');
-      return;
-    }
-
-    void loadCloudDatabase(user,personalScope).then(next=>{
-      try {
-        localStorage.setItem(STORAGE_KEY,JSON.stringify(next));
-      } catch {}
-
+    void loadCloudDatabase(user,{type:'personal'}).then(next=>{
       dbRef.current=next;
       setDB(next);
-      setCloudScope(personalScope);
+      setCloudScope({type:'personal'});
       setNotice('Firebase 단어장을 불러왔습니다.');
     }).catch(err=>{
       setNotice(err instanceof Error?err.message:'Firebase 단어장을 불러오지 못했습니다.');
@@ -584,61 +533,21 @@ export default function Home() {
     const frame=requestAnimationFrame(()=>typingInputRef.current?.focus());
     return ()=>cancelAnimationFrame(frame);
   },[quiz?.index,quiz?.mode,graded]);
-  function queueCloudSave(user:User,scope:CloudScope,next:Database){
-    let serialized:string;
-
-    try {
-      serialized=writePendingCloudDatabase(user.uid,scope,next);
-    } catch {
-      setNotice('브라우저에 클라우드 저장 대기 데이터를 기록하지 못했습니다.');
-      return;
-    }
-
-    cloudSaveQueueRef.current=cloudSaveQueueRef.current
-      .catch(()=>{})
-      .then(async()=>{
-        try {
-          await saveCloudDatabase(user,scope,next);
-          clearPendingCloudDatabase(user.uid,scope,serialized);
-        } catch(err) {
-          setNotice(
-            err instanceof Error
-              ?`Firebase 저장 실패: ${err.message} · 로컬에는 보관되어 있습니다.`
-              :'Firebase 저장에 실패했습니다. 로컬에는 보관되어 있습니다.'
-          );
-        }
-      });
-  }
-
   function commit(next: Database) {
-    if(storageError){
-      setNotice('저장소 오류를 해결한 후 다시 시도해주세요.');
-      return false;
-    }
-
+    if(storageError){setNotice('저장소 오류를 해결한 후 다시 시도해주세요.');return false;}
     const user=firebaseUserRef.current;
-    const scope=user?selectedCloudScope():null;
-
-    if(user&&!scope){
-      setNotice('그룹 이름을 입력해주세요.');
-      return false;
+    if(user){
+      const scope=selectedCloudScope();
+      if(!scope){setNotice('그룹 이름을 입력해주세요.');return false;}
+      dbRef.current=next;
+      setDB(next);
+      void saveCloudDatabase(user,scope,next).catch(err=>{
+        setNotice(err instanceof Error?err.message:'Firebase 저장에 실패했습니다.');
+      });
+      return true;
     }
-
-    try {
-      localStorage.setItem(STORAGE_KEY,JSON.stringify(next));
-    } catch {
-      setNotice('저장하지 못했습니다. 브라우저 저장 공간이나 설정을 확인해주세요.');
-      return false;
-    }
-
-    dbRef.current=next;
-    setDB(next);
-
-    if(user&&scope){
-      queueCloudSave(user,scope,next);
-    }
-
-    return true;
+    try {localStorage.setItem(STORAGE_KEY,JSON.stringify(next));dbRef.current=next;setDB(next);return true;}
+    catch{setNotice('저장하지 못했습니다. 브라우저 저장 공간이나 설정을 확인해주세요.');return false;}
   }
   function selectedCloudScope():CloudScope|null {
     if(cloudScope.type==='personal')return cloudScope;
@@ -673,17 +582,9 @@ export default function Home() {
     const scope=selectedCloudScope();
     if(!firebaseUser){setNotice('먼저 로그인해주세요.');return;}
     if(!scope){setNotice('그룹 이름을 입력해주세요.');return;}
-
     setCloudBusy(true);
     try {
-      await cloudSaveQueueRef.current.catch(()=>{});
-
-      const current=dbRef.current;
-      const serialized=writePendingCloudDatabase(firebaseUser.uid,scope,current);
-
-      await saveCloudDatabase(firebaseUser,scope,current);
-      clearPendingCloudDatabase(firebaseUser.uid,scope,serialized);
-
+      await saveCloudDatabase(firebaseUser,scope,dbRef.current);
       setCloudScope(scope);
       setNotice(scope.type==='personal'?'내 단어장을 클라우드에 저장했습니다.':'그룹 단어장을 클라우드에 저장했습니다.');
     } catch(err) {
@@ -698,7 +599,6 @@ export default function Home() {
     if(!scope){setNotice('그룹 이름을 입력해주세요.');return;}
     setCloudBusy(true);
     try {
-      await cloudSaveQueueRef.current.catch(()=>{});
       const next=await loadCloudDatabase(firebaseUser,scope);
       if(commit(next)){
         setCloudScope(scope);
