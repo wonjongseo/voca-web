@@ -14,8 +14,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     final prefs = await SharedPreferences.getInstance();
-    if (FirebaseConfig.configured)
+    if (FirebaseConfig.configured) {
       await Firebase.initializeApp(options: FirebaseConfig.options);
+    }
     final controller = LeafyController(
       prefs,
       auth: FirebaseConfig.configured ? FirebaseAuth.instance : null,
@@ -24,10 +25,12 @@ Future<void> main() async {
     final ads = AdsController();
     runApp(LeafyApp(controller: controller, ads: ads));
     unawaited(controller.start());
-    unawaited(ads.start().catchError((Object error) {
-      ads.ready = false;
-      debugPrint('광고 초기화를 완료하지 못했습니다.');
-    }));
+    unawaited(
+      ads.start().catchError((Object error) {
+        ads.ready = false;
+        debugPrint('광고 초기화를 완료하지 못했습니다.');
+      }),
+    );
   } catch (error) {
     runApp(
       MaterialApp(

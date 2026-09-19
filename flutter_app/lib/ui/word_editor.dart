@@ -107,12 +107,13 @@ class _WordEditorState extends State<_WordEditor> {
               ...((original.data['examples'] as List? ?? []).skip(1)),
             ];
           }
-          if (data['synonyms'] != original.text('synonyms'))
+          if (data['synonyms'] != original.text('synonyms')) {
             changes['synonymEntries'] = data['synonyms']!
                 .split(RegExp('[,;]'))
                 .map((s) => s.trim())
                 .where((s) => s.isNotEmpty)
                 .toList();
+          }
           Navigator.pop(context, original.copy(changes));
         },
         child: const Text('저장'),

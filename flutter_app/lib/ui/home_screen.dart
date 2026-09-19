@@ -34,10 +34,11 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await callback();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('$e')));
+      }
     }
   }
 
@@ -63,8 +64,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           FilledButton(
             onPressed: () {
-              if (input.text.trim().isNotEmpty)
+              if (input.text.trim().isNotEmpty) {
                 Navigator.pop(context, input.text.trim());
+              }
             },
             child: const Text('확인'),
           ),
@@ -88,11 +90,12 @@ class _HomeScreenState extends State<HomeScreen> {
           context: context,
           builder: (_) => const _LoginDialog(),
         );
-    if (result != null)
+    if (result != null) {
       await action(
         () =>
             c.signIn(result.email, result.password, register: result.register),
       );
+    }
   }
 
   Future<void> detail(VocabWord word) => showDialog(
@@ -382,8 +385,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
                           );
-                          if (confirmed == true)
+                          if (confirmed == true) {
                             await action(() => c.delete(word.id));
+                          }
                         }
                       },
                       itemBuilder: (_) => const [
@@ -494,7 +498,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   },
                 )
                 .toList();
-            if (mode == QuizMode.context)
+            if (mode == QuizMode.context) {
               words = words
                   .where(
                     (w) => w
@@ -503,6 +507,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         .contains(w.word.toLowerCase()),
                   )
                   .toList();
+            }
             words.shuffle();
             if (words.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -591,10 +596,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ? null
             : () async {
                 final name = await prompt('새 그룹 이름');
-                if (name != null)
+                if (name != null) {
                   await action(() async {
                     await c.createGroup(name);
                   });
+                }
               },
         child: const Text('그룹 만들기'),
       ),
@@ -647,8 +653,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ? null
           : () => action(() async {
               final name = await prompt('추가할 카테고리');
-              if (name != null)
+              if (name != null) {
                 await c.categories({...c.book.categories, name}.toList());
+              }
             }),
       child: const Text('카테고리 추가'),
     ),
@@ -664,12 +671,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   count++;
                 }
               } finally {
-                if (mounted && words.isNotEmpty)
+                if (mounted && words.isNotEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('${words.length}개 중 $count개 가져왔습니다.'),
                     ),
                   );
+                }
               }
             }),
       child: const Text('웹 단어장 CSV 가져오기'),
@@ -744,12 +752,13 @@ class _LoginDialogState extends State<_LoginDialog> {
       ),
       FilledButton(
         onPressed: () {
-          if (form.currentState!.validate())
+          if (form.currentState!.validate()) {
             Navigator.pop(context, (
               email: email.text,
               password: password.text,
               register: register,
             ));
+          }
         },
         child: const Text('계속'),
       ),

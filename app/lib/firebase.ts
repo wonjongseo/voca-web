@@ -15,7 +15,6 @@ import {
   getDoc,
   getDocs,
   getFirestore,
-  limit,
   orderBy,
   query,
   serverTimestamp,
@@ -31,6 +30,7 @@ const config = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 export const firebaseConfigured = Boolean(
@@ -74,6 +74,19 @@ function rootPath(uid:string,scope:CloudScope) {
     :['groups',scope.groupId] as const;
 }
 
+function reviewDocId(review:Review,index:number) {
+  return `${review.date}-${review.wordId}-${index}`;
+}
+
+async function commitWriteChunks(writes:((batch:ReturnType<typeof writeBatch>)=>void)[]) {
+  if(!firestore)throw new Error('Firebase 설정이 필요합니다.');
+  for(let start=0;start<writes.length;start+=450) {
+    const batch=writeBatch(firestore);
+    for(const write of writes.slice(start,start+450))write(batch);
+    await batch.commit();
+  }
+}
+
 async function ensureGroupMember(uid:string,groupId:string,email:string|null) {
   if(!firestore)throw new Error('Firebase 설정이 필요합니다.');
   const groupRef=doc(firestore,'groups',groupId);
@@ -108,24 +121,36 @@ export async function saveCloudDatabase(user:User,scope:CloudScope,database:Data
   if(scope.type==='group')await ensureGroupMember(user.uid,scope.groupId,user.email);
 
   const [rootCollection,rootId]=rootPath(user.uid,scope);
-  const batch=writeBatch(firestore);
   const rootRef=doc(firestore,rootCollection,rootId);
+  const [existingWords,existingReviews]=await Promise.all([
+    getDocs(collection(rootRef,'words')),
+    getDocs(collection(rootRef,'reviews')),
+  ]);
+  const nextWordIds=new Set(database.words.map(word=>word.id));
+  const nextReviewIds=new Set(database.reviews.map(reviewDocId));
+  const writes:((batch:ReturnType<typeof writeBatch>)=>void)[]=[
+    batch=>batch.set(rootRef,{
+      version:database.version,
+      categories:database.categories??[],
+      updatedAt:serverTimestamp(),
+      updatedBy:user.uid,
+    },{merge:true}),
+  ];
 
-  batch.set(rootRef,{
-    version:database.version,
-    categories:database.categories??[],
-    updatedAt:serverTimestamp(),
-    updatedBy:user.uid,
-  },{merge:true});
-
+  for(const item of existingWords.docs) {
+    if(!nextWordIds.has(item.id))writes.push(batch=>batch.delete(item.ref));
+  }
+  for(const item of existingReviews.docs) {
+    if(!nextReviewIds.has(item.id))writes.push(batch=>batch.delete(item.ref));
+  }
   for(const word of database.words){
-    batch.set(doc(rootRef,'words',word.id),{...word,updatedAt:serverTimestamp(),updatedBy:user.uid});
+    writes.push(batch=>batch.set(doc(rootRef,'words',word.id),{...word,updatedAt:serverTimestamp(),updatedBy:user.uid}));
   }
   for(const [index,review] of database.reviews.entries()){
-    batch.set(doc(rootRef,'reviews',`${review.date}-${review.wordId}-${index}`),review);
+    writes.push(batch=>batch.set(doc(rootRef,'reviews',reviewDocId(review,index)),review));
   }
 
-  await batch.commit();
+  await commitWriteChunks(writes);
 }
 
 export async function loadCloudDatabase(user:User,scope:CloudScope):Promise<Database> {
@@ -136,8 +161,8 @@ export async function loadCloudDatabase(user:User,scope:CloudScope):Promise<Data
   const rootRef=doc(firestore,rootCollection,rootId);
   const [rootSnap,wordSnap,reviewSnap]=await Promise.all([
     getDoc(rootRef),
-    getDocs(query(collection(rootRef,'words'),orderBy('created','desc'),limit(500))),
-    getDocs(query(collection(rootRef,'reviews'),limit(2000))),
+    getDocs(query(collection(rootRef,'words'),orderBy('created','desc'))),
+    getDocs(collection(rootRef,'reviews')),
   ]);
 
   const rootData=rootSnap.data() as Partial<Database>|undefined;

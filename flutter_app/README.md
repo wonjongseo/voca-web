@@ -7,11 +7,15 @@ Android / iOS / Web Flutter 앱. 기존 React 웹은 상위 디렉터리에 유�
 
 ```powershell
 cd flutter_app
-flutter pub get
-flutter run -d chrome
+.\tool\flutter35.cmd pub get
+.\tool\flutter35.cmd run -d chrome
 ```
 
-이 작업에서 설치한 로컬 SDK는 `../.tools/flutter/bin/flutter.bat`입니다. SDK와 캐시는 Git에서 제외합니다.
+이 작업에서 설치한 로컬 SDK는 `../.tools/flutter/bin/flutter.bat`입니다.
+현재 윈도우 워크스페이스의 SDK는 맥 환경과 같은 `Flutter 3.35.0 / Dart 3.9.0 / DevTools 2.48.0`으로 고정했습니다.
+revision은 `b896255557`, engine은 `6cd51c08a88e7bbe848a762c20ad3ecb8b063c0e`입니다.
+`tool/flutter35.cmd`는 `APPDATA`와 `PUB_CACHE`를 `../.tools` 아래로 돌려서 전역 Flutter나 사용자 폴더 설정과 섞이지 않게 실행합니다.
+SDK와 캐시는 Git에서 제외합니다.
 Firebase 설정 없이도 게스트 단어장, 퀴즈, CSV 기능을 실행할 수 있습니다.
 
 ## 구현된 기능
@@ -74,7 +78,7 @@ SharedPreferences는 소규모 단어장의 초기 저장 구현입니다. 큰 �
 기본값은 광고 OFF이며, Android/iOS 네이티브 설정에는 공식 테스트 App ID를 넣습니다.
 
 ```powershell
-flutter run --dart-define=ADS_ENABLED=true
+.\tool\flutter35.cmd run --dart-define=ADS_ENABLED=true
 ```
 
 테스트 배너만 사용됩니다. 실제 배포 시:
@@ -97,9 +101,9 @@ Flutter Web의 `web/index.html`에는 호스트 HTML 광고 연결 위치를 두
 ## 검증 및 출시 준비
 
 ```powershell
-flutter analyze
-flutter test
-flutter build web
+.\tool\flutter35.cmd analyze
+.\tool\flutter35.cmd test
+.\tool\flutter35.cmd build web
 ```
 
 Android 빌드는 Android SDK/JDK, iOS 빌드는 macOS/Xcode 및 서명이 필요합니다.

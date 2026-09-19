@@ -12,8 +12,9 @@ class Pronunciation {
               locale.toLowerCase(),
         )
         .toList();
-    if (matches.isEmpty)
+    if (matches.isEmpty) {
       throw StateError('선택한 영어 음성이 없습니다. 기기에 미국/영국 영어 음성을 설치해주세요.');
+    }
     await _tts.setLanguage(locale);
     await _tts.setVoice({
       'name': matches.first['name'].toString(),

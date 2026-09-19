@@ -70,10 +70,11 @@ class _QuizScreenState extends State<QuizScreen> {
     try {
       await speech.speak(word.word, widget.controller.accent);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('$e')));
+      }
     }
   }
 
@@ -89,10 +90,11 @@ class _QuizScreenState extends State<QuizScreen> {
       });
       if (widget.controller.autoSpeak) await speak(widget.words[index]);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('채점 결과를 저장하지 못했습니다. 다시 시도하세요. $e')),
         );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }

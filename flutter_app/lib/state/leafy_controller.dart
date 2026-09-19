@@ -66,8 +66,9 @@ class LeafyController extends ChangeNotifier {
       book = next;
       loaded = true;
     } catch (e) {
-      if (generation == _generation)
+      if (generation == _generation) {
         error = '불러오지 못했습니다. 새로고침으로 다시 시도하세요. ($e)';
+      }
     } finally {
       if (generation == _generation) {
         busy = false;
@@ -173,7 +174,9 @@ class LeafyController extends ChangeNotifier {
       final account = await GoogleSignIn.instance.authenticate();
       final token = account.authentication.idToken;
       if (token == null) throw StateError('Google 인증 토큰을 받지 못했습니다.');
-      await auth!.signInWithCredential(GoogleAuthProvider.credential(idToken: token));
+      await auth!.signInWithCredential(
+        GoogleAuthProvider.credential(idToken: token),
+      );
     }
   }
 
@@ -195,8 +198,9 @@ class LeafyController extends ChangeNotifier {
   Future<void> addMember(String uid) async {
     final ref = firestore!.collection('groups').doc(groupId);
     final doc = await ref.get();
-    if (doc.data()?['ownerUid'] != user!.uid)
+    if (doc.data()?['ownerUid'] != user!.uid) {
       throw StateError('그룹 소유자만 멤버를 추가할 수 있습니다.');
+    }
     await ref.update({'memberUids.${uid.trim()}': true});
   }
 
