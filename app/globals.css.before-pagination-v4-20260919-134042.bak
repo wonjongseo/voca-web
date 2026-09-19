@@ -402,39 +402,3 @@
     grid-template-columns:1fr;
   }
 }
-
-/* WORD_LIST_PAGINATION_V4 */
-.word-pagination{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:14px;
-  margin:24px 0 8px;
-}
-.word-pagination button{
-  min-width:64px;
-  height:36px;
-  padding:0 14px;
-  border:1px solid #dfe7e1;
-  border-radius:8px;
-  background:#fff;
-  color:#65736a;
-  font:inherit;
-  font-size:12px;
-  cursor:pointer;
-}
-.word-pagination button:hover:not(:disabled){
-  background:#f4f8f5;
-  border-color:#b8c9bd;
-}
-.word-pagination button:disabled{
-  opacity:.4;
-  cursor:default;
-}
-.word-pagination span{
-  min-width:70px;
-  text-align:center;
-  color:#738078;
-  font-size:12px;
-  font-weight:600;
-}
