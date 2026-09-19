@@ -1270,6 +1270,8 @@ export default function Home() {
   const current=quiz?.words[quiz.index];
   const currentMeaning=quiz?.meanings?.[quiz.index] ?? current?.meaning ?? '';
   const currentMeanings=current?getMeanings(current):[];
+  const currentExamples=current?getExamples(current):[];
+  const currentSynonyms=current?getSynonyms(current):[]; // QUIZ_REVIEW_DETAILS_V2
   const currentMeaningItems=buildMeaningStudyItems(currentMeanings);
   const visibleMeaningHints=currentMeaningItems.filter(
     item=>
@@ -1429,8 +1431,8 @@ export default function Home() {
       >
         다음
       </button>
-    </div>}</>:<div className="empty-state"><BookOpen size={34}/><h3>{db.words.length?'조건에 맞는 단어가 없어요.':'첫 번째 단어를 기록해보세요.'}</h3><p>{db.words.length?'검색어나 필터를 바꿔보세요.':'어떤 단어와 함께 시작할까요?'}</p>{!db.words.length&&<div className="actions"><button className="button primary" onClick={()=>setEditor(newWordForEditor())}><Plus size={17}/>단어 추가</button><button className="button" onClick={()=>{if(commit({...db,words:demoWords()}))setNotice('예시 단어 6개를 추가했습니다.');}}>예시 단어로 시작</button></div>}</div>}<div className="list-bottom"><span>{filtered.length}개의 단어</span><span><Leaf size={13}/>오늘도 한 단어만큼 자라는 중</span></div></section></>}
-    {page==='study'&&<section className="study-section"><div className="quiz-audio-setting"><div><strong>?? ?? ? ?? ?? ??</strong><p>??? ?? ?? ??? ??? ? ? ????.</p></div><button type="button" className="button" role="switch" aria-label="?? ?? ? ?? ?? ??" aria-checked={autoPronunciation} disabled={!ready} onClick={toggleAutoPronunciation}><AudioLines size={17}/>{autoPronunciation?'ON':'OFF'}</button></div>{!quiz?<><div className="section-title"><h2>어떻게 학습할까요?</h2><div className="study-options"><label>학습 범위<select aria-label="학습 범위" value={scope} onChange={e=>setScope(e.target.value)}><option value="due">오늘 복습할 단어 ({due.length})</option><option value="all">모든 단어 ({db.words.length})</option><option value="favorite">즐겨찾기 ({db.words.filter(w=>w.favorite).length})</option><option value="wrong">반복 학습 중 ({wrongWords.length})</option>{categoryNames.map(category=><option key={category} value={`category:${category}`}>카테고리 · {category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select></label><label>문제 수<select aria-label="문제 수" value={quizSize} onChange={e=>setQuizSize(e.target.value)}><option value="5">5개</option><option value="10">10개</option><option value="20">20개</option><option value="30">30개</option><option value="all">전체</option></select></label></div></div><div className="mode-grid">{modes.map(({id,name,desc,icon:Icon})=><button key={id} className="mode-card" onClick={()=>startQuiz(id)} disabled={!ready||!!storageError}><span className="mode-icon"><Icon size={28}/></span><h3>{name}</h3><p>{desc}</p><span className="mode-start">학습 시작<ArrowRight size={18}/></span></button>)}</div><div className="study-note"><Sprout size={22}/><span>오늘 {today.length}번 복습했어요. 작은 반복을 이어가세요.</span></div></>:!current?<div className="quiz-result"><span className="result-icon"><Check size={38}/></span><p className="eyebrow">SESSION COMPLETE</p><h2>오늘도 한 걸음 자랐어요.</h2><p>{quiz.words.length}개 중 {quiz.correct}개를 기억했어요.</p><strong>{Math.round(quiz.correct/quiz.words.length*100)}<small>%</small></strong><div className="result-actions"><button className="button primary" onClick={()=>setQuiz(null)}>학습 목록으로<ArrowRight size={17}/></button></div></div>:<div className="quiz-wrap"><div className="quiz-top"><button className="button text-button" onClick={()=>setQuiz(null)}><ArrowLeft size={17}/>학습 종료</button><span>{modes.find(m=>m.id===quiz.mode)?.name} · {quiz.index+1} / {quiz.words.length}</span></div><div className="progress-track"><div style={{width:`${quiz.index/quiz.words.length*100}%`}}/></div><div className="question-area"><p className="eyebrow">{quiz.mode==='typing'?'이 의미의 영어 단어는?':quiz.mode==='meaningTyping'?'기억나는 의미와 표현을 하나씩 입력하세요':quiz.mode==='context'?'빈칸에 들어갈 단어는?':'이 단어의 의미는?'}</p><h2 className={quiz.mode==='context'?'context-question':''}>{quiz.mode==='typing'?currentMeaning:quiz.mode==='context'?maskedExample(current):current.word}</h2>{quiz.mode==='context'&&graded!==null&&getExamples(current)[0]?.translation&&<p className="context-translation">{getExamples(current)[0].translation}</p>}{(quiz.mode!=='typing'&&quiz.mode!=='context'||quiz.mode==='context'&&graded!==null)&&<button className="icon-button" aria-label="발음 듣기" title="발음 듣기" onClick={()=>speak(current.word)}><AudioLines size={23}/></button>}{quiz.mode==='flash'&&(revealed?<div className="revealed-answer"><MeaningList word={current}/><ExampleList word={current}/></div>:<button className="button" onClick={()=>setRevealed(true)}><RotateCcw size={17}/>정답 보기</button>)}{(quiz.mode==='choice'||quiz.mode==='context')&&<div className="choices">{quiz.choices[quiz.index].map((choice,i)=>{const meaning=choiceMeaning(choice);const value=quiz.mode==='context'&&typeof choice!=='string'?choice.word:meaning;return <button key={`${meaning}-${i}`} className={`choice ${graded!==null&&value===(quiz.mode==='context'?current.word:currentMeaning)?'correct':''} ${graded===false&&value===answer?'incorrect':''}`} disabled={graded!==null} onClick={()=>{setAnswer(value);grade(value===(quiz.mode==='context'?current.word:currentMeaning));}}><span className="choice-number">{i+1}</span><ChoiceContent choice={choice} revealed={graded!==null} wordFirst={quiz.mode==='context'}/></button>;})}</div>}{quiz.mode==='typing'&&<form className="typing-form" onSubmit={e=>{e.preventDefault();if(answer.trim()){const normalized=answer.trim().toLowerCase();const exact=normalized===current.word.trim().toLowerCase();const knownWord=!exact?db.words.find(word=>word.id!==current.id&&word.word.trim().toLowerCase()===normalized):undefined;const alternative=knownWord?findEquivalentMeaningAnswer(answer,current,currentMeaning,db.words):null;const spellingAccepted=!exact&&!knownWord?acceptsSpelling(answer,current.word):false;setAcceptedTypo(spellingAccepted);setAcceptedAlternative(alternative);grade(exact||spellingAccepted||!!alternative);}}}><input ref={typingInputRef} aria-label="영어 단어 정답" autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="영어 단어를 입력하세요" value={answer} disabled={graded!==null} onChange={e=>setAnswer(e.target.value)}/><button className="button primary" disabled={!answer.trim()||graded!==null}>정답 확인</button></form>}{quiz.mode==='meaningTyping'&&graded===null&&<div className="meaning-step-study">
+    </div>}</>:<div className="empty-state"><BookOpen size={20}/><h3>{db.words.length?'조건에 맞는 단어가 없어요.':'첫 번째 단어를 기록해보세요.'}</h3><p>{db.words.length?'검색어나 필터를 바꿔보세요.':'어떤 단어와 함께 시작할까요?'}</p>{!db.words.length&&<div className="actions"><button className="button primary" onClick={()=>setEditor(newWordForEditor())}><Plus size={17}/>단어 추가</button><button className="button" onClick={()=>{if(commit({...db,words:demoWords()}))setNotice('예시 단어 6개를 추가했습니다.');}}>예시 단어로 시작</button></div>}</div>}<div className="list-bottom"><span>{filtered.length}개의 단어</span><span><Leaf size={13}/>오늘도 한 단어만큼 자라는 중</span></div></section></>}
+    {page==='study'&&<section className="study-section"><div className="quiz-audio-setting"><div><strong>정답 확인 후 자동 발음</strong><p>정답을 확인하면 현재 단어의 발음을 자동으로 들려줘요.</p></div><button type="button" className="button" role="switch" aria-label="정답 확인 후 자동 발음" aria-checked={autoPronunciation} disabled={!ready} onClick={toggleAutoPronunciation}><AudioLines size={17}/>{autoPronunciation?'ON':'OFF'}</button></div>{!quiz?<><div className="section-title"><h2>어떻게 학습할까요?</h2><div className="study-options"><label>학습 범위<select aria-label="학습 범위" value={scope} onChange={e=>setScope(e.target.value)}><option value="due">오늘 복습할 단어 ({due.length})</option><option value="all">모든 단어 ({db.words.length})</option><option value="favorite">즐겨찾기 ({db.words.filter(w=>w.favorite).length})</option><option value="wrong">반복 학습 중 ({wrongWords.length})</option>{categoryNames.map(category=><option key={category} value={`category:${category}`}>카테고리 · {category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select></label><label>문제 수<select aria-label="문제 수" value={quizSize} onChange={e=>setQuizSize(e.target.value)}><option value="5">5개</option><option value="10">10개</option><option value="20">20개</option><option value="30">30개</option><option value="all">전체</option></select></label></div></div><div className="mode-grid">{modes.map(({id,name,desc,icon:Icon})=><button key={id} className="mode-card" onClick={()=>startQuiz(id)} disabled={!ready||!!storageError}><span className="mode-icon"><Icon size={28}/></span><h3>{name}</h3><p>{desc}</p><span className="mode-start">학습 시작<ArrowRight size={18}/></span></button>)}</div><div className="study-note"><Sprout size={22}/><span>오늘 {today.length}번 복습했어요. 작은 반복을 이어가세요.</span></div></>:!current?<div className="quiz-result"><span className="result-icon"><Check size={38}/></span><p className="eyebrow">SESSION COMPLETE</p><h2>오늘도 한 걸음 자랐어요.</h2><p>{quiz.words.length}개 중 {quiz.correct}개를 기억했어요.</p><strong>{Math.round(quiz.correct/quiz.words.length*100)}<small>%</small></strong><div className="result-actions"><button className="button primary" onClick={()=>setQuiz(null)}>학습 목록으로<ArrowRight size={17}/></button></div></div>:<div className="quiz-wrap"><div className="quiz-top"><button className="button text-button" onClick={()=>setQuiz(null)}><ArrowLeft size={17}/>학습 종료</button><span>{modes.find(m=>m.id===quiz.mode)?.name} · {quiz.index+1} / {quiz.words.length}</span></div><div className="progress-track"><div style={{width:`${quiz.index/quiz.words.length*100}%`}}/></div><div className={`question-area ${graded===null?'quiz-question-centered':''}`}><p className="eyebrow">{quiz.mode==='typing'?'이 의미의 영어 단어는?':quiz.mode==='meaningTyping'?'기억나는 의미와 표현을 하나씩 입력하세요':quiz.mode==='context'?'빈칸에 들어갈 단어는?':'이 단어의 의미는?'}</p><h2 className={quiz.mode==='context'?'context-question':''}>{quiz.mode==='typing'?currentMeaning:quiz.mode==='context'?maskedExample(current):current.word}</h2>{quiz.mode==='context'&&graded!==null&&getExamples(current)[0]?.translation&&<p className="context-translation">{getExamples(current)[0].translation}</p>}{(quiz.mode!=='typing'&&quiz.mode!=='context'||quiz.mode==='context'&&graded!==null)&&<button className="icon-button" aria-label="발음 듣기" title="발음 듣기" onClick={()=>speak(current.word)}><AudioLines size={23}/></button>}{quiz.mode==='flash'&&(revealed?<div className="revealed-answer"><MeaningList word={current}/><ExampleList word={current}/></div>:<button className="button" onClick={()=>setRevealed(true)}><RotateCcw size={17}/>정답 보기</button>)}{(quiz.mode==='choice'||quiz.mode==='context')&&<div className="choices">{quiz.choices[quiz.index].map((choice,i)=>{const meaning=choiceMeaning(choice);const value=quiz.mode==='context'&&typeof choice!=='string'?choice.word:meaning;return <button key={`${meaning}-${i}`} className={`choice ${graded!==null&&value===(quiz.mode==='context'?current.word:currentMeaning)?'correct':''} ${graded===false&&value===answer?'incorrect':''}`} disabled={graded!==null} onClick={()=>{setAnswer(value);grade(value===(quiz.mode==='context'?current.word:currentMeaning));}}><span className="choice-number">{i+1}</span><ChoiceContent choice={choice} revealed={graded!==null} wordFirst={quiz.mode==='context'}/></button>;})}</div>}{quiz.mode==='typing'&&<form className="typing-form" onSubmit={e=>{e.preventDefault();if(answer.trim()){const normalized=answer.trim().toLowerCase();const exact=normalized===current.word.trim().toLowerCase();const knownWord=!exact?db.words.find(word=>word.id!==current.id&&word.word.trim().toLowerCase()===normalized):undefined;const alternative=knownWord?findEquivalentMeaningAnswer(answer,current,currentMeaning,db.words):null;const spellingAccepted=!exact&&!knownWord?acceptsSpelling(answer,current.word):false;setAcceptedTypo(spellingAccepted);setAcceptedAlternative(alternative);grade(exact||spellingAccepted||!!alternative);}}}><input ref={typingInputRef} aria-label="영어 단어 정답" autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="영어 단어를 입력하세요" value={answer} disabled={graded!==null} onChange={e=>setAnswer(e.target.value)}/><button className="button primary" disabled={!answer.trim()||graded!==null}>정답 확인</button></form>}{quiz.mode==='meaningTyping'&&graded===null&&<div className="meaning-step-study">
       <div className="meaning-step-head">
         <div>
           <strong>{meaningCompleted.length} / {currentMeaningItems.length}</strong>
@@ -1666,7 +1668,6 @@ export default function Home() {
 
       {quiz.mode==='meaningTyping'
         ?<>
-          <p>등록된 의미: {currentMeanings.join(' · ')}</p>
           <p>이번에 직접 맞힌 항목: {meaningCompleted.length} / {currentMeaningItems.length}</p>
           {!graded&&missingMeaningItems.length>0&&<div className="meaning-missing-answers">
             <strong>맞추지 못한 정답</strong>
@@ -1679,6 +1680,48 @@ export default function Home() {
           {graded&&acceptedAlternative&&<p>인정된 답: {acceptedAlternative.word} · {currentMeaning}</p>}
         </>}
 
+      {current&&<div className="quiz-word-details">
+        <div className="quiz-word-details-head">
+          <span>단어 정보</span>
+          <strong>{current.word}</strong>
+        </div>
+
+        {currentMeanings.length>0&&<div className="quiz-word-detail-row">
+          <span className="quiz-word-detail-label">전체 의미</span>
+          <div className="quiz-word-detail-values">
+            {currentMeanings.map((meaning,index)=>
+              <p key={`${current.id}-meaning-${index}`}>{meaning}</p>
+            )}
+          </div>
+        </div>}
+
+        {currentExamples.length>0&&<div className="quiz-word-detail-row">
+          <span className="quiz-word-detail-label">예문</span>
+          <div className="quiz-word-detail-examples">
+            {currentExamples.map((example,index)=>
+              <div className="quiz-word-detail-example" key={`${current.id}-example-${index}`}>
+                {example.text&&<p className="quiz-word-example-en">{example.text}</p>}
+                {example.translation&&<p className="quiz-word-example-ko">{example.translation}</p>}
+              </div>
+            )}
+          </div>
+        </div>}
+
+        {currentSynonyms.length>0&&<div className="quiz-word-detail-row">
+          <span className="quiz-word-detail-label">유의어</span>
+          <div className="quiz-word-synonyms">
+            {currentSynonyms.map((synonym,index)=>
+              <span key={`${current.id}-synonym-${index}`}>{synonym}</span>
+            )}
+          </div>
+        </div>}
+
+        {current.memo?.trim()&&<div className="quiz-word-detail-row">
+          <span className="quiz-word-detail-label">메모</span>
+          <p className="quiz-word-memo">{current.memo}</p>
+        </div>}
+
+      </div>}
       <button className="button primary" onClick={nextQuestion}>
         {quiz.index+1===quiz.words.length?'결과 보기':'다음 단어'}
         <ArrowRight size={17}/>

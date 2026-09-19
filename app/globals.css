@@ -509,3 +509,197 @@
   font-size:12px;
   font-weight:600;
 }
+
+/* QUIZ_REVIEW_DETAILS_V2 */
+.quiz-word-details{
+  width:100%;
+  max-width:760px;
+  margin:20px auto 22px;
+  overflow:hidden;
+  border:1px solid #dfe7e1;
+  border-radius:10px;
+  background:#fbfcfa;
+  text-align:left;
+}
+.quiz-word-details-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:13px 15px;
+  border-bottom:1px solid #e6ece7;
+  background:#f3f7f4;
+}
+.quiz-word-details-head>span{
+  color:#7e8d82;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.08em;
+}
+.quiz-word-details-head>strong{
+  color:#304438;
+  font-size:18px;
+}
+.quiz-word-detail-row{
+  display:grid;
+  grid-template-columns:78px minmax(0,1fr);
+  gap:14px;
+  padding:13px 15px;
+  border-bottom:1px solid #edf1ed;
+}
+.quiz-word-detail-row:last-child{
+  border-bottom:0;
+}
+.quiz-word-detail-label{
+  padding-top:2px;
+  color:#89958c;
+  font-size:11px;
+  font-weight:700;
+}
+.quiz-word-detail-values{
+  display:grid;
+  gap:5px;
+}
+.quiz-word-detail-values p,
+.quiz-word-memo{
+  margin:0;
+  color:#425348;
+  font-size:13px;
+  line-height:1.65;
+}
+.quiz-word-detail-examples{
+  display:grid;
+  gap:9px;
+}
+.quiz-word-detail-example{
+  padding:10px 12px;
+  border:1px solid #edf1ed;
+  border-radius:7px;
+  background:#fff;
+}
+.quiz-word-detail-example p{
+  margin:0;
+}
+.quiz-word-example-en{
+  color:#34493b;
+  font-size:13px;
+  font-weight:600;
+  line-height:1.6;
+}
+.quiz-word-example-ko{
+  margin-top:4px!important;
+  color:#849087;
+  font-size:12px;
+  line-height:1.55;
+}
+.quiz-word-synonyms{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.quiz-word-synonyms>span,
+.quiz-word-category{
+  display:inline-flex;
+  align-items:center;
+  min-height:26px;
+  padding:4px 9px;
+  border:1px solid #dce6df;
+  border-radius:999px;
+  background:#fff;
+  color:#58705f;
+  font-size:11px;
+  font-weight:600;
+}
+.quiz-word-memo{
+  white-space:pre-wrap;
+}
+@media(max-width:600px){
+  .quiz-word-detail-row{
+    grid-template-columns:1fr;
+    gap:6px;
+  }
+}
+
+/* QUIZ_CENTER_AND_COMPACT_AUDIO_V1 */
+
+/* 자동 발음 설정을 보조 옵션처럼 작게 표시 */
+.quiz-audio-setting{
+  width:min(100%,430px);
+  margin:0 0 16px auto;
+  padding:8px 10px;
+  gap:10px;
+  border-radius:6px;
+}
+.quiz-audio-setting strong{
+  font-size:10px;
+  font-weight:700;
+}
+.quiz-audio-setting p{
+  margin:2px 0 0;
+  font-size:9px;
+  line-height:1.35;
+}
+.quiz-audio-setting button{
+  min-width:58px;
+  min-height:30px;
+  padding:5px 9px;
+  font-size:10px;
+}
+
+/* 문제를 푸는 동안만 퀴즈 본문을 남은 화면의 세로 중앙으로 */
+@media (min-height:650px){
+  .quiz-wrap{
+    min-height:calc(100dvh - 150px);
+    display:flex;
+    flex-direction:column;
+  }
+
+  .quiz-top,
+  .progress-track{
+    flex:0 0 auto;
+  }
+
+  .question-area.quiz-question-centered{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    padding-top:20px;
+    padding-bottom:72px;
+  }
+}
+
+@media (max-width:600px){
+  .quiz-audio-setting{
+    width:100%;
+    margin-left:0;
+  }
+
+  .question-area.quiz-question-centered{
+    padding-bottom:38px;
+  }
+}
+
+/* QUIZ_SPACING_CLEANUP_V1 */
+
+/*
+  이전 viewport 전체 세로 중앙 정렬을 무효화합니다.
+  진행바 아래에 적당한 간격만 두고 문제 영역을 시작합니다.
+*/
+.quiz-wrap{
+  min-height:0!important;
+  display:block!important;
+}
+
+.question-area.quiz-question-centered{
+  flex:none!important;
+  display:block!important;
+  justify-content:initial!important;
+  padding:76px 20px 35px!important;
+}
+
+@media(max-width:600px){
+  .question-area.quiz-question-centered{
+    padding:42px 0 24px!important;
+  }
+}
