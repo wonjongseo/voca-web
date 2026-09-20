@@ -3,98 +3,94 @@
 
 from pathlib import Path
 from datetime import datetime
+import json
 import shutil
 import sys
 
-MARKER = 'QUIZ_SPACING_CLEANUP_V1'
+MARKER = "WEB_XLSX_IMPORT_WITH_CATEGORY_V3"
 
-def fail(msg):
-    print('\n[ERROR] ' + msg)
+def fail(message):
+    print("\n[ERROR] " + message)
     sys.exit(1)
 
+def replace_range(text, start_marker, end_marker, replacement, label):
+    start = text.find(start_marker)
+    if start < 0:
+        fail(f"{label}: 시작점을 찾지 못했습니다: {start_marker}")
+    end = text.find(end_marker, start)
+    if end < 0:
+        fail(f"{label}: 종료점을 찾지 못했습니다: {end_marker}")
+    return text[:start] + replacement + text[end:]
+
 root = Path.cwd()
-page_path = root / 'app' / 'page.tsx'
-css_path = root / 'app' / 'globals.css'
+page_path = root / "app" / "page.tsx"
+vocab_path = root / "app" / "lib" / "vocabulary.ts"
+package_path = root / "package.json"
 
-if not (root / 'package.json').exists():
-    fail('voca-web 프로젝트 루트에서 실행해주세요.')
-if not page_path.exists():
-    fail('app/page.tsx를 찾지 못했습니다.')
-if not css_path.exists():
-    fail('app/globals.css를 찾지 못했습니다.')
+for path in (page_path, vocab_path, package_path):
+    if not path.exists():
+        fail(f"{path}를 찾지 못했습니다. voca-web 프로젝트 루트에서 실행해주세요.")
 
-page = page_path.read_text(encoding='utf-8')
-css = css_path.read_text(encoding='utf-8')
+page = page_path.read_text(encoding="utf-8")
+vocab = vocab_path.read_text(encoding="utf-8")
+package = json.loads(package_path.read_text(encoding="utf-8"))
 
-if MARKER in css:
-    print('[INFO] 퀴즈 여백 정리 패치가 이미 적용되어 있습니다.')
+if MARKER in page:
+    print("[INFO] 웹 XLSX + 카테고리 가져오기 V3가 이미 적용되어 있습니다.")
     sys.exit(0)
 
-# 1. 전체 의미 카드와 중복되는 '등록된 의미' 제거
-registered_line = "          <p>등록된 의미: {currentMeanings.join(' · ')}</p>\n"
-registered_count = page.count(registered_line)
-if registered_count == 1:
-    page = page.replace(registered_line, '', 1)
-elif registered_count > 1:
-    fail(f'등록된 의미 문구가 여러 개 있습니다: {registered_count}개')
-else:
-    # 이미 제거된 경우는 통과
-    if '등록된 의미: {currentMeanings.join' in page:
-        fail('등록된 의미 문구 구조가 예상과 달라 자동 수정하지 않았습니다.')
+stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+backup_dir = root / f".web_xlsx_category_v3_backup_{stamp}"
 
-# 2. 이전 요청대로 정답 후 정보 카드의 카테고리도 제거
-category_block = '        {current.category?.trim()&&<div className="quiz-word-detail-row">\n          <span className="quiz-word-detail-label">카테고리</span>\n          <span className="quiz-word-category">{current.category}</span>\n        </div>}\n'
-if category_block in page:
-    page = page.replace(category_block, '', 1)
-else:
-    # 이미 제거되었으면 통과. 단, 퀴즈 정보 카드 안에 남아 있으면 중단.
-    details_start = page.find('className="quiz-word-details"')
-    if details_start >= 0:
-        details_end = page.find('      </div>}', details_start)
-        if details_end >= 0:
-            details_slice = page[details_start:details_end+14]
-            if '>카테고리</span>' in details_slice:
-                fail('퀴즈 단어 정보 카드의 카테고리 구조가 예상과 다릅니다.')
+for path in (page_path, vocab_path, package_path):
+    dst = backup_dir / path.relative_to(root)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, dst)
 
-# 3. 과도한 세로 중앙 정렬을 CSS override로 무효화
-css_override = '\n/* QUIZ_SPACING_CLEANUP_V1 */\n\n/*\n  이전 viewport 전체 세로 중앙 정렬을 무효화합니다.\n  진행바 아래에 적당한 간격만 두고 문제 영역을 시작합니다.\n*/\n.quiz-wrap{\n  min-height:0!important;\n  display:block!important;\n}\n\n.question-area.quiz-question-centered{\n  flex:none!important;\n  display:block!important;\n  justify-content:initial!important;\n  padding:76px 20px 35px!important;\n}\n\n@media(max-width:600px){\n  .question-area.quiz-question-centered{\n    padding:42px 0 24px!important;\n  }\n}\n'
-css += css_override
+# ------------------------------------------------------------
+# 1) SheetJS XLSX dependency
+# 실패했던 이전 V2가 package.json까지만 수정했어도 안전하게 재실행 가능.
+# ------------------------------------------------------------
+dependencies = package.setdefault("dependencies", {})
+dependencies["xlsx"] = "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
 
-# 4. 검증
-if '등록된 의미: {currentMeanings.join' in page:
-    fail('등록된 의미 줄이 아직 남아 있습니다.')
+package_path.write_text(
+    json.dumps(package, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
 
-if 'className="quiz-word-details"' in page:
-    details_start = page.find('className="quiz-word-details"')
-    next_button = page.find('onClick={nextQuestion}', details_start)
-    if next_button > details_start:
-        details_slice = page[details_start:next_button]
-        if '>카테고리</span>' in details_slice:
-            fail('정답 후 단어 정보 카드에 카테고리가 아직 남아 있습니다.')
+# ------------------------------------------------------------
+# 2) CSV parser aliases
+# Day -> category / 대소문자 무관 alias.
+# 이전 실패 패치가 vocabulary.ts까지만 바꾼 경우에도 no-op.
+# ------------------------------------------------------------
+if "'day':'category'" not in vocab and "'day': 'category'" not in vocab:
+    alias_start = vocab.find("const aliases: Record<string,string> = ")
+    if alias_start < 0:
+        fail("vocabulary.ts aliases 선언을 찾지 못했습니다.")
+    alias_end = vocab.find(";\n", alias_start)
+    if alias_end < 0:
+        fail("vocabulary.ts aliases 선언 끝을 찾지 못했습니다.")
+    alias_end += 1
 
-if MARKER not in css:
-    fail('CSS override 검증 실패')
-if 'padding:76px 20px 35px!important;' not in css:
-    fail('데스크톱 문제 영역 여백 검증 실패')
+    aliases = """const aliases: Record<string,string> = {
+  '영단어':'word',
+  '영어단어':'word',
+  '단어':'word',
+  '의미':'meaning',
+  '뜻':'meaning',
+  '예시':'example',
+  '예문':'example',
+  '예시 뜻':'translation',
+  '예문 뜻':'translation',
+  '유의어':'synonyms',
+  '메모':'memo',
+  '카테고리':'category',
+  '분류':'category',
+  'day':'category',
+  '즐겨찾기':'favorite',
+}"""
+    vocab = vocab[:alias_start] + aliases + vocab[alias_end:]
 
-stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-page_bak = page_path.with_name(f'{page_path.name}.before-quiz-spacing-cleanup-{stamp}.bak')
-css_bak = css_path.with_name(f'{css_path.name}.before-quiz-spacing-cleanup-{stamp}.bak')
-shutil.copy2(page_path, page_bak)
-shutil.copy2(css_path, css_bak)
-
-page_path.write_text(page, encoding='utf-8', newline='\n')
-css_path.write_text(css, encoding='utf-8', newline='\n')
-
-print('\n[OK] 퀴즈 UI 여백/중복 문구 정리 완료')
-print('- viewport 전체 강제 세로 중앙 정렬 무효화')
-print('- 진행바 아래 약 76px 후 문제 시작')
-print('- 모바일은 약 42px 여백')
-print('- 등록된 의미: ... 문구 제거')
-print('- 정답 후 단어 정보 카드의 카테고리 제거')
-print(f'\n백업: {page_bak}')
-print(f'백업: {css_bak}')
-print('\n다음 실행:')
-print('  npm run typecheck')
-print('  npm run build')
-print('  npm run dev')
+if "aliases[key.toLowerCase()]" not in vocab:
+    old = "transformHeader: h => aliases[h.trim()] || h.trim().toLowerCase()"

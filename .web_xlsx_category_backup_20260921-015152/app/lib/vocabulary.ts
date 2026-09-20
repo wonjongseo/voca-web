@@ -48,28 +48,9 @@ export function loadDatabase(raw: string): Database {
   return {...data,categories};
 }
 const fields = ['word','meaning','example','translation','synonyms','memo','category','favorite','level','due','created'] as const;
-const aliases: Record<string,string> = {
-  '영단어':'word',
-  '영어단어':'word',
-  '단어':'word',
-  '의미':'meaning',
-  '뜻':'meaning',
-  '예시':'example',
-  '예문':'example',
-  '예시 뜻':'translation',
-  '예문 뜻':'translation',
-  '유의어':'synonyms',
-  '메모':'memo',
-  '카테고리':'category',
-  '분류':'category',
-  'day':'category',
-  '즐겨찾기':'favorite',
-};
+const aliases: Record<string,string> = {'영단어':'word','단어':'word','의미':'meaning','뜻':'meaning','예시':'example','예문':'example','예시 뜻':'translation','예문 뜻':'translation','유의어':'synonyms','메모':'memo','카테고리':'category','분류':'category','즐겨찾기':'favorite'};
 export function parseCSV(csv: string): {words: Word[]; skipped: number} {
-  const parsed = Papa.parse<Record<string,string>>(csv.replace(/^\uFEFF/,''), {header:true, skipEmptyLines:'greedy', transformHeader: h => {
-    const key=h.trim();
-    return aliases[key] || aliases[key.toLowerCase()] || key.toLowerCase();
-  }});
+  const parsed = Papa.parse<Record<string,string>>(csv.replace(/^\uFEFF/,''), {header:true, skipEmptyLines:'greedy', transformHeader: h => aliases[h.trim()] || h.trim().toLowerCase()});
   if(parsed.errors.length) throw new Error(`CSV 형식을 확인해주세요: ${parsed.errors[0].message}`);
   if(!parsed.meta.fields?.includes('word') || !parsed.meta.fields.includes('meaning')) throw new Error('CSV에 word(영단어), meaning(의미) 열이 필요합니다.');
   let skipped = 0;
