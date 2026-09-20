@@ -1,7 +1,11 @@
 import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../domain/vocabulary.dart';
+
+const _reviewStorageVersion = 3;
 
 abstract class NotebookRepository {
   Future<Notebook> load();
@@ -13,109 +17,393 @@ abstract class NotebookRepository {
 
 class GuestRepository implements NotebookRepository {
   GuestRepository(this.preferences);
+
   final SharedPreferences preferences;
   Notebook _book = const Notebook();
+
   @override
   Future<Notebook> load() async {
     final raw = preferences.getString(guestStorageKey);
-    _book = raw == null ? const Notebook() : Notebook.fromJson(jsonDecode(raw));
+    _book = raw == null
+        ? const Notebook()
+        : Notebook.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     return _book;
   }
 
+  Future<void> replaceAll(Notebook book) => _save(book);
+
   Future<void> _save(Notebook next) async {
-    if (!await preferences.setString(
+    final saved = await preferences.setString(
       guestStorageKey,
       jsonEncode(next.toJson()),
-    )) {
-      throw StateError('기기에 저장하지 못했습니다.');
-    }
+    );
+    if (!saved) throw StateError('기기에 저장하지 못했습니다.');
     _book = next;
   }
 
   @override
   Future<void> putWord(VocabWord word) => _save(
-    _book.replace(words: [..._book.words.where((w) => w.id != word.id), word]),
-  );
+        _book.replace(
+          words: [
+            ..._book.words.where((candidate) => candidate.id != word.id),
+            word,
+          ],
+        ),
+      );
+
   @override
   Future<void> deleteWord(String id) => _save(
-    _book.replace(words: _book.words.where((w) => w.id != id).toList()),
-  );
+        _book.replace(
+          words: _book.words.where((word) => word.id != id).toList(),
+        ),
+      );
+
   @override
   Future<void> review(VocabWord word, Map<String, dynamic> review) => _save(
-    _book.replace(
-      words: _book.words.map((w) => w.id == word.id ? word : w).toList(),
-      reviews: [..._book.reviews, review],
-    ),
-  );
+        _book.replace(
+          words: _book.words
+              .map((candidate) => candidate.id == word.id ? word : candidate)
+              .toList(),
+          reviews: [..._book.reviews, review],
+        ),
+      );
+
   @override
   Future<void> setCategories(List<String> categories) =>
       _save(_book.replace(categories: categories));
 }
 
 class CloudRepository implements NotebookRepository {
-  CloudRepository(this.firestore, this.uid, {this.groupId});
+  CloudRepository(
+    this.firestore,
+    this.uid, {
+    this.groupId,
+  });
+
   final FirebaseFirestore firestore;
   final String uid;
   final String? groupId;
+
   DocumentReference<Map<String, dynamic>> get root => groupId == null
       ? firestore.collection('users').doc(uid)
       : firestore.collection('groups').doc(groupId);
-  @override
-  Future<Notebook> load() async {
-    // Explicit refresh only: no billed, always-on snapshot listener.
-    final metadata = await root.get();
-    final words = <VocabWord>[];
+
+  String _reviewId(Map<String, dynamic> review, int wordIndex) {
+    final id = '${review['id'] ?? ''}'.trim();
+    if (id.isNotEmpty) return id;
+    return 'legacy:${review['date']}:${review['correct'] == true ? 1 : 0}:$wordIndex';
+  }
+
+  String _encodeReviewEvent(
+    Map<String, dynamic> review,
+    int wordIndex,
+  ) {
+    return jsonEncode([
+      _reviewId(review, wordIndex),
+      '${review['date'] ?? ''}',
+      review['correct'] == true ? 1 : 0,
+    ]);
+  }
+
+  Map<String, dynamic>? _decodeReviewEvent(
+    String raw,
+    String wordId,
+  ) {
+    try {
+      final parsed = jsonDecode(raw);
+      if (parsed is! List ||
+          parsed.length < 3 ||
+          parsed[0] is! String ||
+          parsed[1] is! String ||
+          (parsed[2] != 0 && parsed[2] != 1)) {
+        return null;
+      }
+      return <String, dynamic>{
+        'id': parsed[0],
+        'date': parsed[1],
+        'correct': parsed[2] == 1,
+        'wordId': wordId,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<String> _reviewEventsFor(
+    List<Map<String, dynamic>> reviews,
+    String wordId,
+  ) {
+    final matches =
+        reviews.where((review) => review['wordId'] == wordId).toList();
+    return [
+      for (var index = 0; index < matches.length; index++)
+        _encodeReviewEvent(matches[index], index),
+    ];
+  }
+
+  Map<String, dynamic> _wordData(
+    VocabWord word, {
+    Object? reviewEvents,
+  }) {
+    return <String, dynamic>{
+      ...word.toJson(),
+      if (reviewEvents != null) '_reviewEvents': reviewEvents,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': uid,
+    };
+  }
+
+  VocabWord _wordFromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = Map<String, dynamic>.from(doc.data())
+      ..remove('_reviewEvents')
+      ..remove('updatedAt')
+      ..remove('updatedBy');
+    return VocabWord({...data, 'id': doc.id});
+  }
+
+  List<Map<String, dynamic>> _reviewsFromWordDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final raw = doc.data()['_reviewEvents'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<String>()
+        .map((event) => _decodeReviewEvent(event, doc.id))
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _loadWordDocs() async {
+    final result = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     QueryDocumentSnapshot<Map<String, dynamic>>? last;
-    do {
+
+    while (true) {
       Query<Map<String, dynamic>> query = root
           .collection('words')
           .orderBy(FieldPath.documentId)
-          .limit(200);
+          .limit(300);
       if (last != null) query = query.startAfterDocument(last);
+
       final page = await query.get();
-      words.addAll(
-        page.docs.map(
-          (d) => VocabWord({...d.data(), 'id': d.id}).copy({'updatedAt': null}),
+      result.addAll(page.docs);
+
+      if (page.docs.length < 300) break;
+      last = page.docs.last;
+    }
+
+    return result;
+  }
+
+  Future<List<Map<String, dynamic>>> _loadLegacyReviews() async {
+    final result = <Map<String, dynamic>>[];
+    QueryDocumentSnapshot<Map<String, dynamic>>? last;
+
+    while (true) {
+      Query<Map<String, dynamic>> query = root
+          .collection('reviews')
+          .orderBy(FieldPath.documentId)
+          .limit(500);
+      if (last != null) query = query.startAfterDocument(last);
+
+      final page = await query.get();
+      for (final doc in page.docs) {
+        result.add({
+          ...doc.data(),
+          'id': 'legacy:${doc.id}',
+        });
+      }
+
+      if (page.docs.length < 500) break;
+      last = page.docs.last;
+    }
+
+    return result;
+  }
+
+  Future<void> _commitBatches(
+    List<void Function(WriteBatch batch)> operations,
+  ) async {
+    if (operations.isEmpty) return;
+
+    for (var start = 0; start < operations.length; start += 450) {
+      final batch = firestore.batch();
+      for (final operation in operations.skip(start).take(450)) {
+        operation(batch);
+      }
+      await batch.commit();
+    }
+  }
+
+  Future<void> _migrateLegacyReviews(
+    List<VocabWord> words,
+    List<Map<String, dynamic>> legacyReviews,
+  ) async {
+    final operations = <void Function(WriteBatch batch)>[];
+
+    for (final word in words) {
+      final events = _reviewEventsFor(legacyReviews, word.id);
+      if (events.isEmpty) continue;
+
+      operations.add(
+        (batch) => batch.set(
+          root.collection('words').doc(word.id),
+          {
+            '_reviewEvents': events,
+            'updatedAt': FieldValue.serverTimestamp(),
+            'updatedBy': uid,
+          },
+          SetOptions(merge: true),
         ),
       );
-      if (page.docs.length < 200) break;
-      last = page.docs.last;
-    } while (true);
-    final reviews = await root
-        .collection('reviews')
-        .orderBy('date', descending: true)
-        .limit(2000)
-        .get();
+    }
+
+    operations.add(
+      (batch) => batch.set(
+        root,
+        {
+          'reviewStorageVersion': _reviewStorageVersion,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedBy': uid,
+        },
+        SetOptions(merge: true),
+      ),
+    );
+
+    await _commitBatches(operations);
+  }
+
+  @override
+  Future<Notebook> load() async {
+    final metadataFuture = root.get();
+    final wordsFuture = _loadWordDocs();
+
+    final metadata = await metadataFuture;
+    final wordDocs = await wordsFuture;
+    final words = wordDocs.map(_wordFromDoc).toList();
+
+    final storedCategories = (metadata.data()?['categories'] as List? ?? const [])
+        .whereType<String>()
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty);
+
+    final categories = <String>{
+      ...storedCategories,
+      ...words.map((word) => word.category).where((value) => value.isNotEmpty),
+    }.toList()
+      ..sort();
+
+    final storageVersion =
+        (metadata.data()?['reviewStorageVersion'] as num?)?.toInt();
+
+    if (storageVersion == _reviewStorageVersion) {
+      return Notebook(
+        words: words,
+        reviews: wordDocs.expand(_reviewsFromWordDoc).toList(),
+        categories: categories,
+      );
+    }
+
+    final legacyReviews = await _loadLegacyReviews();
+    await _migrateLegacyReviews(words, legacyReviews);
+
     return Notebook(
       words: words,
-      reviews: reviews.docs.map((d) => d.data()).toList(),
-      categories: (metadata.data()?['categories'] as List? ?? [])
-          .cast<String>(),
+      reviews: legacyReviews,
+      categories: categories,
     );
   }
 
-  Map<String, dynamic> _wordData(VocabWord word) => {
-    ...word.toJson(),
-    'updatedAt': FieldValue.serverTimestamp(),
-    'updatedBy': uid,
-  };
   @override
-  Future<void> putWord(VocabWord word) =>
-      root.collection('words').doc(word.id).set(_wordData(word));
-  @override
-  Future<void> deleteWord(String id) =>
-      root.collection('words').doc(id).delete();
-  @override
-  Future<void> review(VocabWord word, Map<String, dynamic> review) async {
-    final batch = firestore.batch();
-    batch.set(root.collection('words').doc(word.id), _wordData(word));
-    batch.set(root.collection('reviews').doc(), review);
-    await batch.commit();
+  Future<void> putWord(VocabWord word) {
+    return root.collection('words').doc(word.id).set(
+          _wordData(word),
+          SetOptions(merge: true),
+        );
   }
 
   @override
-  Future<void> setCategories(List<String> categories) => root.set({
-    'version': 1,
-    'categories': categories,
-  }, SetOptions(merge: true));
+  Future<void> deleteWord(String id) {
+    return root.collection('words').doc(id).delete();
+  }
+
+  @override
+  Future<void> review(
+    VocabWord word,
+    Map<String, dynamic> review,
+  ) {
+    final event = _encodeReviewEvent(review, 0);
+    return root.collection('words').doc(word.id).set(
+          _wordData(
+            word,
+            reviewEvents: FieldValue.arrayUnion([event]),
+          ),
+          SetOptions(merge: true),
+        );
+  }
+
+  @override
+  Future<void> setCategories(List<String> categories) {
+    return root.set(
+      {
+        'version': 1,
+        'categories': categories,
+        'reviewStorageVersion': _reviewStorageVersion,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': uid,
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> mergeGuestNotebook(Notebook guest) async {
+    final current = await load();
+
+    final categories = <String>{
+      ...current.categories,
+      ...guest.categories,
+      ...current.words
+          .map((word) => word.category)
+          .where((value) => value.isNotEmpty),
+      ...guest.words
+          .map((word) => word.category)
+          .where((value) => value.isNotEmpty),
+    }.toList()
+      ..sort();
+
+    final operations = <void Function(WriteBatch batch)>[];
+
+    for (final word in guest.words) {
+      final events = _reviewEventsFor(guest.reviews, word.id);
+      operations.add(
+        (batch) => batch.set(
+          root.collection('words').doc(word.id),
+          _wordData(
+            word,
+            reviewEvents:
+                events.isEmpty ? null : FieldValue.arrayUnion(events),
+          ),
+          SetOptions(merge: true),
+        ),
+      );
+    }
+
+    operations.add(
+      (batch) => batch.set(
+        root,
+        {
+          'version': 1,
+          'categories': categories,
+          'reviewStorageVersion': _reviewStorageVersion,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedBy': uid,
+        },
+        SetOptions(merge: true),
+      ),
+    );
+
+    await _commitBatches(operations);
+  }
 }

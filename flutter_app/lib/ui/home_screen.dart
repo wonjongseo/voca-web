@@ -1,29 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../ads/ads_controller.dart';
 import '../ads/banner_slot.dart';
+import '../domain/quiz_logic.dart';
 import '../domain/vocabulary.dart';
 import '../services/csv_transfer.dart';
 import '../services/pronunciation.dart';
 import '../state/leafy_controller.dart';
+import 'app_theme.dart';
 import 'quiz_screen.dart';
 import 'word_editor.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.controller, required this.ads});
+  const HomeScreen({
+    super.key,
+    required this.controller,
+    required this.ads,
+  });
+
   final LeafyController controller;
   final AdsController ads;
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   int tab = 0;
-  String search = '', filter = '전체', category = '전체', studyScope = '오늘 복습';
+  String search = '';
+  String filter = '전체';
+  String category = '전체';
+  String studyScope = '오늘 복습';
   int quizSize = 10;
   bool quizActive = false;
+
   final speech = Pronunciation();
+
   LeafyController get c => widget.controller;
+
+  static const titles = [
+    '나의 단어장',
+    '오늘의 학습',
+    '오답노트',
+    '학습 기록',
+    '계정과 설정',
+  ];
+
+  static const subtitles = [
+    '모은 단어를 검색하고 정리해요.',
+    '오늘 기억할 만큼만 가볍게 시작해요.',
+    '틀린 단어를 다시 만나 확실히 익혀요.',
+    '쌓인 학습 기록을 한눈에 확인해요.',
+    '동기화, 발음, 그룹과 단어장을 관리해요.',
+  ];
+
   @override
   void dispose() {
     speech.stop();
@@ -33,28 +64,23 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> action(Future<void> Function() callback) async {
     try {
       await callback();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$e')));
-      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$error')),
+      );
     }
   }
 
-  Future<String?> prompt(
-    String title, {
-    String initial = '',
-    bool secret = false,
-  }) async {
-    final input = TextEditingController(text: initial);
+  Future<String?> prompt(String title) async {
+    final input = TextEditingController();
+
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
         content: TextField(
           controller: input,
-          obscureText: secret,
           autofocus: true,
         ),
         actions: [
@@ -64,650 +90,1106 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           FilledButton(
             onPressed: () {
-              if (input.text.trim().isNotEmpty) {
-                Navigator.pop(context, input.text.trim());
-              }
+              final value = input.text.trim();
+              if (value.isNotEmpty) Navigator.pop(context, value);
             },
             child: const Text('확인'),
           ),
         ],
       ),
     );
-    // Dialog close animation can still access its controller; let the widget go first.
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     input.dispose();
+
     return result;
   }
 
   Future<void> edit([VocabWord? word]) async {
     final updated = await editWord(context, word: word);
-    if (updated != null) await action(() => c.save(updated));
+    if (updated != null) {
+      await action(() => c.save(updated));
+    }
   }
 
   Future<void> login() async {
     final result =
         await showDialog<({String email, String password, bool register})>(
-          context: context,
-          builder: (_) => const _LoginDialog(),
-        );
-    if (result != null) {
-      await action(
-        () =>
-            c.signIn(result.email, result.password, register: result.register),
-      );
-    }
+      context: context,
+      builder: (_) => const _LoginDialog(),
+    );
+
+    if (result == null) return;
+
+    await action(
+      () => c.signIn(
+        result.email,
+        result.password,
+        register: result.register,
+      ),
+    );
   }
 
-  Future<void> detail(VocabWord word) => showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(word.word),
-      content: SizedBox(
-        width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                word.meanings.join('\n'),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 16),
-              for (final example
-                  in (word.data['examples'] as List? ??
-                      [
-                        {
-                          'text': word.text('example'),
-                          'translation': word.text('translation'),
-                        },
-                      ])) ...[
-                Text(example['text'] as String),
-                Text(
-                  example['translation'] as String,
-                  style: const TextStyle(color: Colors.grey),
-                ),
-                const SizedBox(height: 12),
-              ],
-              Text('유의어: ${word.text('synonyms')}'),
-              Text(word.text('memo')),
-            ],
+  Future<void> detail(VocabWord word) {
+    return showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: LeafyTheme.surface,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            4,
+            20,
+            24 + MediaQuery.viewInsetsOf(context).bottom,
           ),
-        ),
-      ),
-      actions: [
-        IconButton(
-          onPressed: () => action(() => speech.speak(word.word, c.accent)),
-          icon: const Icon(Icons.volume_up),
-          tooltip: '발음 듣기',
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('닫기'),
-        ),
-      ],
-    ),
-  );
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([c, widget.ads]),
-    builder: (context, _) {
-      final categories = {
-        ...c.book.categories,
-        ...c.book.words
-            .map((w) => w.text('category'))
-            .where((s) => s.isNotEmpty),
-      }.toList()..sort();
-      return Scaffold(
-        appBar: AppBar(
-          title: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.eco, color: Color(0xff386b50)),
-              SizedBox(width: 8),
-              Text('Leafy'),
-            ],
-          ),
-          actions: [
-            IconButton(
-              onPressed: c.busy ? null : () => c.selectScope(c.groupId),
-              icon: const Icon(Icons.refresh),
-              tooltip: '단어장 새로고침',
-            ),
-            IconButton(
-              onPressed: () => setState(() => tab = 4),
-              icon: Icon(
-                c.user == null
-                    ? Icons.person_outline
-                    : Icons.cloud_done_outlined,
-              ),
-              tooltip: '계정과 설정',
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            if (c.busy) const LinearProgressIndicator(),
-            if (c.error != null)
-              MaterialBanner(
-                content: Text(c.error!),
-                actions: [
-                  TextButton(
-                    onPressed: c.busy ? null : () => c.selectScope(c.groupId),
-                    child: const Text('다시 시도'),
-                  ),
-                ],
-              ),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1000),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-                    children: [
-                      Text(
-                        ['나의 단어장', '오늘의 학습', '오답노트', '학습 기록', '계정과 설정'][tab],
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        c.user == null
-                            ? '이 기기에 저장되는 나만의 단어장'
-                            : c.groupId == null
-                            ? '내 계정의 클라우드 단어장'
-                            : '그룹 단어장 · ${c.groupId}',
-                      ),
-                      const SizedBox(height: 24),
-                      if (tab == 0 || tab == 2) ..._words(categories),
-                      if (tab == 1) ..._study(categories),
-                      if (tab == 3) ..._statistics(),
-                      if (tab == 4) ..._settings(),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            if (widget.ads.ready && !quizActive)
-              BannerSlot(key: ValueKey(widget.ads.bannerId), ads: widget.ads),
-          ],
-        ),
-        floatingActionButton: tab == 0 && c.loaded
-            ? FloatingActionButton.extended(
-                onPressed: c.busy ? null : () => edit(),
-                icon: const Icon(Icons.add),
-                label: const Text('단어 추가'),
-              )
-            : null,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: tab,
-          onDestinationSelected: (value) => setState(() => tab = value),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.menu_book_outlined),
-              label: '단어장',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.layers_outlined),
-              label: '학습',
-            ),
-            NavigationDestination(icon: Icon(Icons.replay), label: '오답'),
-            NavigationDestination(icon: Icon(Icons.bar_chart), label: '기록'),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              label: '설정',
-            ),
-          ],
-        ),
-      );
-    },
-  );
-  List<Widget> _words(List<String> categories) {
-    final words =
-        c.book.words
-            .where(
-              (w) =>
-                  (tab != 2 || c.wrongIds.contains(w.id)) &&
-                  (filter != '즐겨찾기' || w.favorite) &&
-                  (filter != '복습' || c.due.any((d) => d.id == w.id)) &&
-                  (filter != '익숙한 단어' || w.level >= 4) &&
-                  (category == '전체' || w.text('category') == category) &&
-                  '${w.word} ${w.meaning} ${w.text('memo')}'
-                      .toLowerCase()
-                      .contains(search.toLowerCase()),
-            )
-            .toList()
-          ..sort(
-            (a, b) =>
-                (b.data['created'] as num).compareTo(a.data['created'] as num),
-          );
-    return [
-      TextField(
-        decoration: const InputDecoration(
-          prefixIcon: Icon(Icons.search),
-          hintText: '단어, 뜻, 메모 검색',
-        ),
-        onChanged: (value) => setState(() => search = value),
-      ),
-      const SizedBox(height: 12),
-      Wrap(
-        spacing: 8,
-        children: [
-          for (final value in ['전체', '즐겨찾기', '복습', '익숙한 단어'])
-            FilterChip(
-              label: Text(value),
-              selected: filter == value,
-              onSelected: (_) => setState(() => filter = value),
-            ),
-        ],
-      ),
-      DropdownButton<String>(
-        value: categories.contains(category) ? category : '전체',
-        isExpanded: true,
-        items: ['전체', ...categories]
-            .map(
-              (s) => DropdownMenuItem(
-                value: s,
-                child: Text(s == '전체' ? '모든 카테고리' : s),
-              ),
-            )
-            .toList(),
-        onChanged: (s) => setState(() => category = s!),
-      ),
-      Text('${words.length}개의 단어'),
-      const SizedBox(height: 12),
-      if (words.isEmpty)
-        const Padding(
-          padding: EdgeInsets.all(32),
-          child: Text(
-            '아직 단어가 없어요. 새 단어를 추가하거나 CSV를 가져오세요.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      for (final word in words)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
                     Expanded(
-                      child: InkWell(
-                        onTap: () => detail(word),
-                        child: Text(
-                          word.word,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
+                      child: Text(
+                        word.word,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
                       ),
                     ),
-                    IconButton(
-                      onPressed: () =>
-                          action(() => speech.speak(word.word, c.accent)),
-                      tooltip: '발음 듣기',
-                      icon: const Icon(Icons.volume_up_outlined),
-                    ),
-                    IconButton(
-                      onPressed: c.busy || !c.loaded
-                          ? null
-                          : () => action(
-                              () => c.save(
-                                word.copy({'favorite': !word.favorite}),
-                              ),
-                            ),
-                      tooltip: '즐겨찾기',
-                      icon: Icon(
-                        word.favorite ? Icons.star : Icons.star_border,
-                        color: word.favorite ? Colors.amber.shade800 : null,
+                    IconButton.filledTonal(
+                      onPressed: () => action(
+                        () => speech.speak(word.word, c.accent),
                       ),
-                    ),
-                    PopupMenuButton<String>(
-                      enabled: c.loaded && !c.busy,
-                      onSelected: (value) async {
-                        if (value == 'edit') {
-                          await edit(word);
-                        } else {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: Text('${word.word} 삭제'),
-                              content: const Text('이 단어를 삭제할까요?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: const Text('취소'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('삭제'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirmed == true) {
-                            await action(() => c.delete(word.id));
-                          }
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'edit', child: Text('수정')),
-                        PopupMenuItem(value: 'delete', child: Text('삭제')),
-                      ],
+                      icon: const Icon(Icons.volume_up_rounded),
                     ),
                   ],
                 ),
-                Text(word.meaning),
-                if (word.text('example').isNotEmpty)
+                const SizedBox(height: 12),
+                for (final meaning in word.meanings)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
-                      word.text('example'),
-                      style: const TextStyle(color: Colors.grey),
+                      meaning,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-                const SizedBox(height: 8),
-                Text(
-                  '${word.text('category')}  ·  ${word.level >= 4
-                      ? '익숙해요'
-                      : word.level > 0
-                      ? '학습 중'
-                      : '새 단어'}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xff386b50),
+                if (word.examples.isNotEmpty) ...[
+                  const Divider(),
+                  const _MiniTitle('예문'),
+                  for (final example in word.examples)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: LeafyTheme.background,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if ((example['text'] ?? '').isNotEmpty)
+                            Text(
+                              example['text']!,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          if ((example['translation'] ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              example['translation']!,
+                              style: const TextStyle(
+                                color: LeafyTheme.muted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                ],
+                if (word.synonymEntries.isNotEmpty) ...[
+                  const Divider(),
+                  const _MiniTitle('유의어'),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: word.synonymEntries
+                        .map((value) => Chip(label: Text(value)))
+                        .toList(),
                   ),
-                ),
+                ],
+                if (word.text('memo').trim().isNotEmpty) ...[
+                  const Divider(),
+                  const _MiniTitle('메모'),
+                  Text(word.text('memo')),
+                ],
               ],
             ),
           ),
         ),
-    ];
+      ),
+    );
   }
 
-  List<Widget> _study(List<String> categories) => [
-    Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([c, widget.ads]),
+      builder: (context, _) {
+        final categories = <String>{
+          ...c.book.categories,
+          ...c.book.words
+              .map((word) => word.category)
+              .where((value) => value.isNotEmpty),
+        }.toList()
+          ..sort();
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: LeafyTheme.surfaceSoft,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(
+                    Icons.eco_rounded,
+                    color: LeafyTheme.primary,
+                    size: 21,
+                  ),
+                ),
+                const SizedBox(width: 9),
+                const Text(
+                  'Leafy',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                onPressed: c.busy ? null : c.refreshScope,
+                tooltip: '클라우드에서 새로고침',
+                icon: const Icon(Icons.sync_rounded),
+              ),
+              IconButton(
+                onPressed: () => setState(() => tab = 4),
+                tooltip: '계정과 설정',
+                icon: Icon(
+                  c.user == null
+                      ? Icons.person_outline_rounded
+                      : Icons.cloud_done_outlined,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+          ),
+          body: Column(
+            children: [
+              if (c.busy) const LinearProgressIndicator(minHeight: 2),
+              if (c.error != null)
+                MaterialBanner(
+                  backgroundColor: const Color(0xfffff4ec),
+                  content: Text(c.error!),
+                  actions: [
+                    TextButton(
+                      onPressed: c.busy ? null : c.refreshScope,
+                      child: const Text('다시 시도'),
+                    ),
+                  ],
+                ),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(18, 12, 18, 104),
+                      children: [
+                        _header(),
+                        const SizedBox(height: 18),
+                        if (tab == 0) ..._words(categories, wrongOnly: false),
+                        if (tab == 1) ..._study(categories),
+                        if (tab == 2) ..._words(categories, wrongOnly: true),
+                        if (tab == 3) ..._statistics(),
+                        if (tab == 4) ..._settings(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.ads.ready && !quizActive)
+                BannerSlot(
+                  key: ValueKey(widget.ads.bannerId),
+                  ads: widget.ads,
+                ),
+            ],
+          ),
+          floatingActionButton: tab == 0 && c.loaded
+              ? FloatingActionButton.extended(
+                  onPressed: c.busy ? null : () => edit(),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('단어 추가'),
+                )
+              : null,
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: tab,
+            onDestinationSelected: (value) => setState(() => tab = value),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.menu_book_outlined),
+                selectedIcon: Icon(Icons.menu_book_rounded),
+                label: '단어장',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.school_outlined),
+                selectedIcon: Icon(Icons.school_rounded),
+                label: '학습',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.replay_outlined),
+                selectedIcon: Icon(Icons.replay_rounded),
+                label: '오답',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.bar_chart_outlined),
+                selectedIcon: Icon(Icons.bar_chart_rounded),
+                label: '기록',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings_rounded),
+                label: '설정',
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _header() {
+    final cloudLabel = c.user == null
+        ? '이 기기에 저장'
+        : c.groupId == null
+            ? '내 계정 · 로컬 캐시'
+            : '그룹 · ${c.groupId}';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                titles[tab],
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitles[tab],
+                style: const TextStyle(color: LeafyTheme.muted),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: LeafyTheme.surfaceSoft,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            cloudLabel,
+            style: const TextStyle(
+              color: LeafyTheme.primaryDark,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _words(
+    List<String> categories, {
+    required bool wrongOnly,
+  }) {
+    final words = c.book.words.where((word) {
+      if (wrongOnly && !c.wrongIds.contains(word.id)) return false;
+      if (filter == '즐겨찾기' && !word.favorite) return false;
+      if (filter == '복습' && !c.due.any((due) => due.id == word.id)) return false;
+      if (filter == '익숙한 단어' && word.level < 4) return false;
+      if (category != '전체' && word.category != category) return false;
+
+      final haystack =
+          '${word.word} ${word.meanings.join(' ')} ${word.text('memo')} ${word.synonymEntries.join(' ')}'
+              .toLowerCase();
+
+      return haystack.contains(search.toLowerCase());
+    }).toList()
+      ..sort(
+        (a, b) => ((b.data['created'] as num?) ?? 0)
+            .compareTo((a.data['created'] as num?) ?? 0),
+      );
+
+    return [
+      TextField(
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.search_rounded),
+          hintText: '단어, 뜻, 메모, 유의어 검색',
+        ),
+        onChanged: (value) => setState(() => search = value),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 42,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
           children: [
-            Text('기억이 흐려지기 전에,', style: Theme.of(context).textTheme.titleLarge),
-            Text('오늘의 ${c.due.length}개 단어를 만나볼까요?'),
-            const SizedBox(height: 12),
-            const Text('조금씩, 매일, 꾸준히.'),
+            for (final value in ['전체', '즐겨찾기', '복습', '익숙한 단어'])
+              Padding(
+                padding: const EdgeInsets.only(right: 7),
+                child: FilterChip(
+                  label: Text(value),
+                  selected: filter == value,
+                  onSelected: (_) => setState(() => filter = value),
+                ),
+              ),
           ],
         ),
       ),
-    ),
-    SwitchListTile(
-      title: const Text('정답 확인 후 발음 자동 듣기'),
-      value: c.autoSpeak,
-      onChanged: (v) => action(() => c.setAutoSpeak(v)),
-    ),
-    DropdownButton<String>(
-      isExpanded: true,
-      value:
-          [
+      const SizedBox(height: 10),
+      DropdownButtonFormField<String>(
+        value: categories.contains(category) ? category : '전체',
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.folder_open_outlined),
+          labelText: '카테고리',
+        ),
+        items: ['전체', ...categories]
+            .map(
+              (value) => DropdownMenuItem(
+                value: value,
+                child: Text(value == '전체' ? '모든 카테고리' : value),
+              ),
+            )
+            .toList(),
+        onChanged: (value) => setState(() => category = value ?? '전체'),
+      ),
+      const SizedBox(height: 16),
+      Row(
+        children: [
+          Text(
+            '${words.length}개의 단어',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          if (wrongOnly) ...[
+            const SizedBox(width: 8),
+            const Text(
+              '3연속 정답 시 오답노트 졸업',
+              style: TextStyle(
+                color: LeafyTheme.muted,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ],
+      ),
+      const SizedBox(height: 8),
+      if (words.isEmpty)
+        _empty(
+          wrongOnly
+              ? '현재 오답노트에 남아 있는 단어가 없어요.'
+              : '아직 단어가 없어요. 새 단어를 추가하거나 CSV를 가져오세요.',
+          wrongOnly
+              ? Icons.check_circle_outline_rounded
+              : Icons.menu_book_outlined,
+        ),
+      for (final word in words) _wordCard(word, wrongOnly: wrongOnly),
+    ];
+  }
+
+  Widget _wordCard(VocabWord word, {required bool wrongOnly}) {
+    final progress = c.wrongProgress(word.id);
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => detail(word),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 15, 10, 15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          word.word,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          word.meanings.join(' · '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: LeafyTheme.muted,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => action(
+                      () => speech.speak(word.word, c.accent),
+                    ),
+                    icon: const Icon(Icons.volume_up_outlined),
+                  ),
+                  IconButton(
+                    onPressed: c.busy
+                        ? null
+                        : () => action(
+                              () => c.save(
+                                word.copy({'favorite': !word.favorite}),
+                              ),
+                            ),
+                    icon: Icon(
+                      word.favorite
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      color: word.favorite
+                          ? Colors.amber.shade700
+                          : LeafyTheme.muted,
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    enabled: c.loaded && !c.busy,
+                    onSelected: (value) => _wordMenu(word, value),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('수정')),
+                      PopupMenuItem(value: 'delete', child: Text('삭제')),
+                    ],
+                  ),
+                ],
+              ),
+              if (word.examples.isNotEmpty &&
+                  (word.examples.first['text'] ?? '').isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  word.examples.first['text']!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: LeafyTheme.muted,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (word.category.isNotEmpty)
+                    _badge(word.category, Icons.folder_outlined),
+                  _badge(
+                    word.level >= 4
+                        ? '익숙해요'
+                        : word.level > 0
+                            ? '학습 중'
+                            : '새 단어',
+                    Icons.spa_outlined,
+                  ),
+                  if (wrongOnly)
+                    _badge(
+                      '연속 정답 ${progress.streak}/$relearningStreakTarget',
+                      Icons.replay_rounded,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _badge(String text, IconData icon) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: LeafyTheme.surfaceSoft,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: LeafyTheme.primary),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              style: const TextStyle(
+                color: LeafyTheme.primaryDark,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _wordMenu(VocabWord word, String value) async {
+    if (value == 'edit') {
+      await edit(word);
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${word.word} 삭제'),
+        content: const Text('이 단어를 단어장에서 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: LeafyTheme.danger),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await action(() => c.delete(word.id));
+    }
+  }
+
+  List<Widget> _study(List<String> categories) => [
+        Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: LeafyTheme.primaryDark,
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '오늘도 조금씩',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${c.due.length}개 단어가 복습을 기다리고 있어요.',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.spa_rounded, color: Colors.white, size: 36),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: SwitchListTile(
+            secondary: const Icon(Icons.volume_up_outlined),
+            title: const Text(
+              '정답 확인 후 자동 발음',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+            subtitle: const Text(
+              '정답을 확인한 뒤 현재 단어를 들려줘요.',
+              style: TextStyle(fontSize: 11),
+            ),
+            value: c.autoSpeak,
+            onChanged: (value) => action(() => c.setAutoSpeak(value)),
+          ),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(
+          value: [
             '오늘 복습',
             '전체',
             '즐겨찾기',
             '오답',
-            ...categories.map((s) => '카테고리:$s'),
+            ...categories.map((value) => '카테고리:$value'),
           ].contains(studyScope)
-          ? studyScope
-          : '오늘 복습',
-      items: [
-        '오늘 복습',
-        '전체',
-        '즐겨찾기',
-        '오답',
-        ...categories.map((s) => '카테고리:$s'),
-      ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-      onChanged: (s) => setState(() => studyScope = s!),
-    ),
-    DropdownButton<int>(
-      value: quizSize,
-      items: [5, 10, 20, 30, 99999]
-          .map(
-            (n) => DropdownMenuItem(
-              value: n,
-              child: Text(n == 99999 ? '전체 문제' : '$n문제'),
-            ),
-          )
-          .toList(),
-      onChanged: (n) => setState(() => quizSize = n!),
-    ),
-    for (final mode in QuizMode.values)
-      Card(
-        child: ListTile(
-          leading: const Icon(Icons.school_outlined),
-          title: Text(modeNames[mode]!),
-          trailing: const Icon(Icons.chevron_right),
-          enabled: !c.busy && c.loaded,
-          onTap: () async {
-            var words = c.book.words
-                .where(
-                  (w) => switch (studyScope) {
-                    '오늘 복습' => c.due.any((d) => d.id == w.id),
-                    '즐겨찾기' => w.favorite,
-                    '오답' => c.wrongIds.contains(w.id),
-                    _ =>
-                      !studyScope.startsWith('카테고리:') ||
-                          w.text('category') == studyScope.substring(5),
-                  },
-                )
-                .toList();
-            if (mode == QuizMode.context) {
-              words = words
-                  .where(
-                    (w) => w
-                        .text('example')
-                        .toLowerCase()
-                        .contains(w.word.toLowerCase()),
-                  )
-                  .toList();
-            }
-            words.shuffle();
-            if (words.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('이 범위에서 학습할 단어가 없습니다.')),
-              );
-              return;
-            }
-            setState(() => quizActive = true);
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => QuizScreen(
-                  controller: c,
-                  words: words.take(quizSize).toList(),
-                  mode: mode,
+              ? studyScope
+              : '오늘 복습',
+          decoration: const InputDecoration(
+            labelText: '학습 범위',
+            prefixIcon: Icon(Icons.tune_rounded),
+          ),
+          items: [
+            '오늘 복습',
+            '전체',
+            '즐겨찾기',
+            '오답',
+            ...categories.map((value) => '카테고리:$value'),
+          ]
+              .map(
+                (value) => DropdownMenuItem(
+                  value: value,
+                  child: Text(
+                    value.startsWith('카테고리:')
+                        ? value.substring('카테고리:'.length)
+                        : value,
+                  ),
                 ),
-              ),
-            );
-            if (mounted) setState(() => quizActive = false);
-          },
+              )
+              .toList(),
+          onChanged: (value) => setState(() {
+            studyScope = value ?? '오늘 복습';
+          }),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<int>(
+          value: quizSize,
+          decoration: const InputDecoration(labelText: '문제 수'),
+          items: [5, 10, 20, 30, 99999]
+              .map(
+                (value) => DropdownMenuItem(
+                  value: value,
+                  child: Text(value == 99999 ? '전체 문제' : '$value문제'),
+                ),
+              )
+              .toList(),
+          onChanged: (value) => setState(() => quizSize = value ?? 10),
+        ),
+        const SizedBox(height: 18),
+        const _MiniTitle('학습 방식'),
+        for (final mode in QuizMode.values) _modeCard(mode),
+      ];
+
+  Widget _modeCard(QuizMode mode) {
+    final descriptions = {
+      QuizMode.flash: '단어를 떠올리고 직접 기억 여부를 체크해요.',
+      QuizMode.choice: '네 개의 의미 중 정답을 고르는 퀴즈예요.',
+      QuizMode.typing: '의미를 보고 영어 철자를 직접 입력해요.',
+      QuizMode.meaning: '의미와 표현을 하나씩 떠올려 모두 완성해요.',
+      QuizMode.context: '예문 빈칸에 들어갈 단어를 입력해요.',
+    };
+
+    return Card(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: LeafyTheme.surfaceSoft,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(modeIcons[mode], color: LeafyTheme.primary),
+        ),
+        title: Text(
+          modeNames[mode]!,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(descriptions[mode]!),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        enabled: !c.busy && c.loaded,
+        onTap: () => _startQuiz(mode),
+      ),
+    );
+  }
+
+  Future<void> _startQuiz(QuizMode mode) async {
+    var words = c.book.words.where((word) {
+      return switch (studyScope) {
+        '오늘 복습' => c.due.any((due) => due.id == word.id),
+        '즐겨찾기' => word.favorite,
+        '오답' => c.wrongIds.contains(word.id),
+        _ => !studyScope.startsWith('카테고리:') ||
+            word.category == studyScope.substring('카테고리:'.length),
+      };
+    }).toList();
+
+    if (mode == QuizMode.context) {
+      words = words.where(hasMaskableExample).toList();
+    }
+
+    if (words.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이 범위에서 학습할 단어가 없습니다.')),
+      );
+      return;
+    }
+
+    final limit = quizSize == 99999 ? words.length : quizSize;
+    final selected = c.selectQuizWords(
+      words,
+      limit,
+      mode.name,
+      wrongOnly: studyScope == '오답',
+    );
+
+    setState(() => quizActive = true);
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => QuizScreen(
+          controller: c,
+          words: selected,
+          mode: mode,
         ),
       ),
-  ];
+    );
+
+    if (mounted) setState(() => quizActive = false);
+  }
+
   List<Widget> _statistics() {
     final reviews = c.book.reviews;
-    final correct = reviews.where((r) => r['correct'] == true).length;
+    final correct = reviews.where((review) => review['correct'] == true).length;
+    final accuracy =
+        reviews.isEmpty ? 0 : (correct / reviews.length * 100).round();
+
     return [
-      Text(
-        '총 ${c.book.words.length}단어 · ${reviews.length}회 복습',
-        style: Theme.of(context).textTheme.titleLarge,
+      Row(
+        children: [
+          Expanded(child: _stat('${c.book.words.length}', '전체 단어')),
+          const SizedBox(width: 8),
+          Expanded(child: _stat('${reviews.length}', '학습 횟수')),
+          const SizedBox(width: 8),
+          Expanded(child: _stat('$accuracy%', '정답률')),
+        ],
       ),
-      Text(
-        '정답률 ${reviews.isEmpty ? 0 : (correct / reviews.length * 100).round()}%',
-      ),
-      const SizedBox(height: 24),
-      const Text('최근 7일'),
+      const SizedBox(height: 20),
+      const _MiniTitle('최근 7일'),
       for (var i = 6; i >= 0; i--)
         Builder(
           builder: (context) {
-            final day = dateKey(DateTime.now().subtract(Duration(days: i)));
-            final count = reviews.where((r) => r['date'] == day).length;
-            return ListTile(title: Text(day), trailing: Text('$count회'));
+            final day = dateKey(
+              DateTime.now().subtract(Duration(days: i)),
+            );
+            final count = reviews.where((review) => review['date'] == day).length;
+
+            return Card(
+              child: ListTile(
+                title: Text(day),
+                trailing: Text(
+                  '$count회',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: LeafyTheme.primary,
+                  ),
+                ),
+              ),
+            );
           },
         ),
-      if (c.user != null) const Text('클라우드 학습 기록은 최근 2,000건을 기준으로 표시합니다.'),
     ];
   }
 
-  List<Widget> _settings() => [
-    if (c.auth == null)
-      const Card(
+  Widget _stat(String value, String label) => Card(
         child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Text('현재 게스트 모드입니다. Firebase 설정 후 로그인과 그룹 공유를 사용할 수 있어요.'),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            children: [
+              Text(
+                value,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              Text(
+                label,
+                style: const TextStyle(color: LeafyTheme.muted, fontSize: 10),
+              ),
+            ],
+          ),
         ),
-      ),
-    if (c.auth != null && c.user == null) ...[
-      FilledButton(
-        onPressed: c.busy ? null : login,
-        child: const Text('이메일 로그인 / 회원가입'),
-      ),
-      OutlinedButton(
-        onPressed: c.busy ? null : () => action(c.googleSignIn),
-        child: const Text('Google 로그인'),
-      ),
-    ],
-    if (c.user != null) ...[
-      ListTile(
-        title: Text(c.user!.email ?? '로그인됨'),
-        subtitle: const Text('내 UID 복사 · 그룹 초대에 사용'),
-        trailing: const Icon(Icons.copy),
-        onTap: () => Clipboard.setData(ClipboardData(text: c.user!.uid)),
-      ),
-      OutlinedButton(
-        onPressed: c.busy ? null : () => action(() => c.auth!.signOut()),
-        child: const Text('로그아웃'),
-      ),
-      const Divider(),
-      const Text('그룹 단어장'),
-      OutlinedButton(
-        onPressed: c.busy ? null : () => c.selectScope(),
-        child: const Text('내 단어장으로 전환'),
-      ),
-      OutlinedButton(
-        onPressed: c.busy
-            ? null
-            : () async {
-                final name = await prompt('새 그룹 이름');
-                if (name != null) {
-                  await action(() async {
-                    await c.createGroup(name);
-                  });
-                }
-              },
-        child: const Text('그룹 만들기'),
-      ),
-      OutlinedButton(
-        onPressed: c.busy
-            ? null
-            : () async {
-                final id = await prompt('초대받은 그룹 ID');
-                if (id != null && !id.contains('/')) await c.selectScope(id);
-              },
-        child: const Text('그룹 열기'),
-      ),
-      if (c.groupId != null) ...[
-        ListTile(
-          title: Text(c.groupId!),
-          subtitle: const Text('그룹 ID 복사'),
-          onTap: () => Clipboard.setData(ClipboardData(text: c.groupId!)),
+      );
+
+  List<Widget> _settings() => [
+        _section(
+          '계정',
+          Icons.person_outline_rounded,
+          [
+            if (c.auth == null)
+              const ListTile(
+                title: Text('게스트 모드'),
+                subtitle: Text('Firebase 네이티브 설정이 없어서 이 기기에만 저장됩니다.'),
+              ),
+            if (c.auth != null && c.user == null) ...[
+              ListTile(
+                leading: const Icon(Icons.mail_outline_rounded),
+                title: const Text('이메일 로그인 / 회원가입'),
+                onTap: c.busy ? null : login,
+              ),
+              ListTile(
+                leading: const Icon(Icons.login_rounded),
+                title: const Text('Google 로그인'),
+                onTap: c.busy ? null : () => action(c.googleSignIn),
+              ),
+            ],
+            if (c.user != null) ...[
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: LeafyTheme.surfaceSoft,
+                  child: Icon(Icons.person_rounded, color: LeafyTheme.primary),
+                ),
+                title: Text(c.user!.email ?? '로그인됨'),
+                subtitle: const Text('눌러서 UID 복사'),
+                onTap: () => Clipboard.setData(
+                  ClipboardData(text: c.user!.uid),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.logout_rounded),
+                title: const Text('로그아웃'),
+                onTap: c.busy ? null : () => action(c.signOut),
+              ),
+            ],
+          ],
         ),
-        OutlinedButton(
-          onPressed: c.busy
-              ? null
-              : () async {
-                  final uid = await prompt('초대할 사용자의 UID');
-                  if (uid != null) await action(() => c.addMember(uid));
+        if (c.user != null) ...[
+          const SizedBox(height: 14),
+          _section(
+            '그룹 단어장',
+            Icons.group_outlined,
+            [
+              ListTile(
+                title: const Text('내 단어장으로 전환'),
+                leading: const Icon(Icons.person_outline_rounded),
+                onTap: c.busy ? null : () => c.selectScope(),
+              ),
+              ListTile(
+                title: const Text('새 그룹 만들기'),
+                leading: const Icon(Icons.group_add_outlined),
+                onTap: c.busy
+                    ? null
+                    : () async {
+                        final name = await prompt('새 그룹 이름');
+                        if (name != null) await action(() => c.createGroup(name));
+                      },
+              ),
+              ListTile(
+                title: const Text('그룹 열기'),
+                leading: const Icon(Icons.folder_open_outlined),
+                onTap: c.busy
+                    ? null
+                    : () async {
+                        final id = await prompt('초대받은 그룹 ID');
+                        if (id != null && !id.contains('/')) {
+                          await c.selectScope(id, forceRemote: true);
+                        }
+                      },
+              ),
+              if (c.groupId != null) ...[
+                ListTile(
+                  title: Text(c.groupId!),
+                  subtitle: const Text('눌러서 그룹 ID 복사'),
+                  onTap: () => Clipboard.setData(
+                    ClipboardData(text: c.groupId!),
+                  ),
+                ),
+                ListTile(
+                  title: const Text('멤버 추가'),
+                  leading: const Icon(Icons.person_add_alt_1_rounded),
+                  onTap: c.busy
+                      ? null
+                      : () async {
+                          final uid = await prompt('초대할 사용자의 UID');
+                          if (uid != null) await action(() => c.addMember(uid));
+                        },
+                ),
+              ],
+            ],
+          ),
+        ],
+        const SizedBox(height: 14),
+        _section(
+          '발음',
+          Icons.volume_up_outlined,
+          [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              child: DropdownButtonFormField<String>(
+                value: c.accent,
+                decoration: const InputDecoration(labelText: '영어 발음'),
+                items: const [
+                  DropdownMenuItem(value: 'en-US', child: Text('미국 영어')),
+                  DropdownMenuItem(value: 'en-GB', child: Text('영국 영어')),
+                ],
+                onChanged: (value) {
+                  if (value != null) action(() => c.setAccent(value));
                 },
-          child: const Text('멤버 추가 (소유자)'),
+              ),
+            ),
+            SwitchListTile(
+              title: const Text('정답 확인 후 자동 발음'),
+              value: c.autoSpeak,
+              onChanged: (value) => action(() => c.setAutoSpeak(value)),
+            ),
+          ],
         ),
-      ],
-    ],
-    const Divider(),
-    const Text('발음'),
-    DropdownButton<String>(
-      value: c.accent,
-      isExpanded: true,
-      items: const [
-        DropdownMenuItem(value: 'en-US', child: Text('미국 영어')),
-        DropdownMenuItem(value: 'en-GB', child: Text('영국 영어')),
-      ],
-      onChanged: (value) => action(() => c.setAccent(value!)),
-    ),
-    SwitchListTile(
-      title: const Text('정답 확인 후 발음 자동 듣기'),
-      value: c.autoSpeak,
-      onChanged: (v) => action(() => c.setAutoSpeak(v)),
-    ),
-    const Divider(),
-    const Text('단어장 관리'),
-    OutlinedButton(
-      onPressed: c.busy || !c.loaded
-          ? null
-          : () => action(() async {
-              final name = await prompt('추가할 카테고리');
-              if (name != null) {
-                await c.categories({...c.book.categories, name}.toList());
-              }
-            }),
-      child: const Text('카테고리 추가'),
-    ),
-    OutlinedButton(
-      onPressed: c.busy || !c.loaded
-          ? null
-          : () => action(() async {
-              final words = await CsvTransfer().importWords();
-              var count = 0;
-              try {
-                for (final word in words) {
-                  await c.save(word);
-                  count++;
-                }
-              } finally {
-                if (mounted && words.isNotEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${words.length}개 중 $count개 가져왔습니다.'),
+        const SizedBox(height: 14),
+        _section(
+          '단어장 관리',
+          Icons.inventory_2_outlined,
+          [
+            ListTile(
+              leading: const Icon(Icons.create_new_folder_outlined),
+              title: const Text('카테고리 추가'),
+              onTap: c.busy || !c.loaded
+                  ? null
+                  : () async {
+                      final name = await prompt('추가할 카테고리');
+                      if (name != null) {
+                        await action(
+                          () => c.categories({...c.book.categories, name}.toList()),
+                        );
+                      }
+                    },
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_rounded),
+              title: const Text('웹 단어장 CSV 가져오기'),
+              onTap: c.busy || !c.loaded ? null : _importCsv,
+            ),
+            ListTile(
+              leading: const Icon(Icons.download_rounded),
+              title: const Text('CSV 내보내기'),
+              onTap: c.book.words.isEmpty
+                  ? null
+                  : () => action(() => CsvTransfer().exportWords(c.book.words)),
+            ),
+            if (widget.ads.privacyRequired)
+              ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined),
+                title: const Text('광고 개인정보 설정'),
+                onTap: () => action(widget.ads.privacyOptions),
+              ),
+          ],
+        ),
+        const SizedBox(height: 26),
+        const Text(
+          'Leafy · 작은 단어가 만드는 큰 변화',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: LeafyTheme.muted, fontSize: 11),
+        ),
+      ];
+
+  Widget _section(String title, IconData icon, List<Widget> children) => Card(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: LeafyTheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                  );
-                }
-              }
-            }),
-      child: const Text('웹 단어장 CSV 가져오기'),
-    ),
-    OutlinedButton(
-      onPressed: c.book.words.isEmpty
-          ? null
-          : () => action(() => CsvTransfer().exportWords(c.book.words)),
-      child: const Text('CSV 내보내기'),
-    ),
-    if (widget.ads.privacyRequired)
-      OutlinedButton(
-        onPressed: () => action(widget.ads.privacyOptions),
-        child: const Text('광고 개인정보 설정'),
-      ),
-    const SizedBox(height: 24),
-    const Text('Leafy · 작은 단어가 만드는 큰 변화', textAlign: TextAlign.center),
-  ];
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ...children,
+          ],
+        ),
+      );
+
+  Future<void> _importCsv() async {
+    final words = await CsvTransfer().importWords();
+    var count = 0;
+
+    try {
+      for (final word in words) {
+        await c.save(word);
+        count++;
+      }
+    } finally {
+      if (!mounted || words.isEmpty) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${words.length}개 중 $count개 가져왔습니다.')),
+      );
+    }
+  }
+
+  Widget _empty(String text, IconData icon) => Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+          child: Column(
+            children: [
+              Icon(icon, color: LeafyTheme.primary, size: 36),
+              const SizedBox(height: 12),
+              Text(
+                text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: LeafyTheme.muted),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _MiniTitle extends StatelessWidget {
+  const _MiniTitle(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+      );
 }
 
 class _LoginDialog extends StatefulWidget {
   const _LoginDialog();
+
   @override
   State<_LoginDialog> createState() => _LoginDialogState();
 }
 
 class _LoginDialogState extends State<_LoginDialog> {
-  final email = TextEditingController(), password = TextEditingController();
+  final email = TextEditingController();
+  final password = TextEditingController();
   final form = GlobalKey<FormState>();
   bool register = false;
+
   @override
   void dispose() {
     email.dispose();
@@ -717,51 +1199,69 @@ class _LoginDialogState extends State<_LoginDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(register ? '회원가입' : '로그인'),
-    content: Form(
-      key: form,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextFormField(
-            controller: email,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(labelText: '이메일'),
-            validator: (v) =>
-                v != null && v.contains('@') ? null : '이메일을 입력해주세요.',
+        title: Text(register ? '회원가입' : '로그인'),
+        content: SizedBox(
+          width: 420,
+          child: Form(
+            key: form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: '이메일',
+                    prefixIcon: Icon(Icons.mail_outline_rounded),
+                  ),
+                  validator: (value) =>
+                      value != null && value.contains('@')
+                          ? null
+                          : '이메일을 입력해주세요.',
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: password,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '비밀번호',
+                    prefixIcon: Icon(Icons.lock_outline_rounded),
+                  ),
+                  validator: (value) =>
+                      (value?.length ?? 0) >= 6
+                          ? null
+                          : '6자 이상 입력해주세요.',
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('새 계정 만들기'),
+                  value: register,
+                  onChanged: (value) => setState(() => register = value),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: password,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: '비밀번호'),
-            validator: (v) => (v?.length ?? 0) >= 6 ? null : '6자 이상 입력해주세요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
           ),
-          SwitchListTile(
-            title: const Text('새 계정 만들기'),
-            value: register,
-            onChanged: (v) => setState(() => register = v),
+          FilledButton(
+            onPressed: () {
+              if (!form.currentState!.validate()) return;
+              Navigator.pop(
+                context,
+                (
+                  email: email.text,
+                  password: password.text,
+                  register: register,
+                ),
+              );
+            },
+            child: Text(register ? '가입하기' : '로그인'),
           ),
         ],
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('취소'),
-      ),
-      FilledButton(
-        onPressed: () {
-          if (form.currentState!.validate()) {
-            Navigator.pop(context, (
-              email: email.text,
-              password: password.text,
-              register: register,
-            ));
-          }
-        },
-        child: const Text('계속'),
-      ),
-    ],
-  );
+      );
 }
