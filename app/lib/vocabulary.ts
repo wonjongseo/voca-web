@@ -7,7 +7,7 @@ export type Word = {
   examples?: Example[]; synonymEntries?: string[]; meaningEntries?: string[];
   category?: string; // CATEGORY_FEATURE_V3
 };
-export type Review = { date: string; correct: boolean; wordId: string };
+export type Review = { id?: string; date: string; correct: boolean; wordId: string };
 export type Database = { version: 1; words: Word[]; reviews: Review[]; categories?: string[] };
 export const STORAGE_KEY = 'leaf-vocabulary-v1';
 export const DAY = 86400000;
@@ -42,7 +42,7 @@ export function validWord(value: unknown): value is Word {
 }
 export function loadDatabase(raw: string): Database {
   const data = JSON.parse(raw);
-  if(data.version !== 1 || !Array.isArray(data.words) || !data.words.every(validWord) || new Set(data.words.map((w: Word)=>w.id)).size !== data.words.length || !Array.isArray(data.reviews) || !data.reviews.every((r: Review)=>r && typeof r.date === 'string' && typeof r.correct === 'boolean' && typeof r.wordId === 'string') || (data.categories !== undefined && (!Array.isArray(data.categories) || !data.categories.every((c: unknown)=>typeof c === 'string')))) throw new Error('저장된 데이터를 읽지 못했습니다. 원본 데이터를 보존하기 위해 저장을 중지했습니다.');
+  if(data.version !== 1 || !Array.isArray(data.words) || !data.words.every(validWord) || new Set(data.words.map((w: Word)=>w.id)).size !== data.words.length || !Array.isArray(data.reviews) || !data.reviews.every((r: Review)=>r && (r.id === undefined || typeof r.id === 'string') && typeof r.date === 'string' && typeof r.correct === 'boolean' && typeof r.wordId === 'string') || (data.categories !== undefined && (!Array.isArray(data.categories) || !data.categories.every((c: unknown)=>typeof c === 'string')))) throw new Error('저장된 데이터를 읽지 못했습니다. 원본 데이터를 보존하기 위해 저장을 중지했습니다.');
   const storedCategories:string[]=Array.isArray(data.categories)?data.categories:[];
   const categories=[...new Set([...storedCategories,...data.words.map((w: Word)=>(w.category??'').trim()).filter(Boolean)])];
   return {...data,categories};

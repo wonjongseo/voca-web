@@ -7,7 +7,7 @@ import {cleanEntries, getExamples, getMeanings, getSynonyms, blankWord, demoWord
 
 import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from './word-entries';
 import {pronunciationSources} from './lib/pronunciation';
-import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, saveCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
+import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, syncCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
 import type {User} from 'firebase/auth';
 
 type Mode = 'flash'|'choice'|'typing'|'meaningTyping'|'context';
@@ -23,6 +23,7 @@ const CATEGORY_DIRTY_KEY='leaf-category-dirty-v1'; // OFFLINE_LOGIN_MERGE_V1
 const LAST_CLOUD_UID_KEY='leaf-last-cloud-uid-v1';
 const LOCAL_ACCOUNT_BACKUP_PREFIX='leaf-local-account-backup-v1'; // CLOUD_SAVE_DURABILITY_V2
 const WORDS_PER_PAGE=24; // WORD_LIST_PAGINATION_V4
+const CLOUD_SESSION_PREFIX='leaf-cloud-session-v1'; // FIRESTORE_COST_OPTIMIZATION_V1
 // RELEARNING_FEATURE_V2
 const RELEARNING_STREAK_TARGET=3;
 const RELEARNING_SHARE=.3;
@@ -412,6 +413,19 @@ function selectBalancedWords(mode:Mode,pool:Word[],limit:number) {
   return [...unseen,...seenWords].slice(0,limit);
 }
 
+function cloudScopeKey(uid:string,scope:CloudScope){
+  return `${uid}:${scope.type==='personal'?'personal':`group:${scope.groupId}`}`;
+}
+
+function cloudSessionKey(scopeKey:string){
+  return `${CLOUD_SESSION_PREFIX}:${scopeKey}`;
+}
+
+function markCloudSession(scopeKey:string){
+  try {sessionStorage.setItem(cloudSessionKey(scopeKey),'1');}
+  catch {}
+}
+
 function cloudPendingKey(uid:string,scope:CloudScope){
   const scopeKey=scope.type==='personal'?'personal':`group:${scope.groupId}`;
   return `${CLOUD_PENDING_PREFIX}:${uid}:${scopeKey}`;
@@ -653,7 +667,8 @@ export default function Home() {
   const wordInputRef = useRef<HTMLInputElement>(null);
   const typingInputRef = useRef<HTMLInputElement>(null);
   const firebaseUserRef = useRef<User|null>(null);
-  const cloudSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const cloudSaveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const cloudShadowRef = useRef<Map<string,Database>>(new Map());
   const meaningComposingRef = useRef(false);
   const meaningSubmitAfterCompositionRef = useRef(false); // MEANING_SINGLE_ENTER_V1
   const meaningHadMistakeRef = useRef(false); // MEANING_FALSE_WRONG_FIX_V1
@@ -682,21 +697,27 @@ export default function Home() {
     setDetail(null);
 
     if(!user){
+      cloudShadowRef.current.clear();
+
       try {
         const raw=localStorage.getItem(STORAGE_KEY);
         let data=raw ? loadDatabase(raw) : emptyDB;
+
         if(categoryDirty()){
           const lastUid=localStorage.getItem(LAST_CLOUD_UID_KEY);
           data=mergeCategorySnapshot(data,lastUid||null,true);
           localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
         }
+
         dbRef.current=data;
         setDB(data);
       } catch {}
+
       return;
     }
 
     const personalScope:CloudScope={type:'personal'};
+    const scopeKey=cloudScopeKey(user.uid,personalScope);
 
     let localDatabase:Database=emptyDB;
     let localDirty=false;
@@ -710,11 +731,36 @@ export default function Home() {
     } catch {}
 
     const pending=readPendingCloudDatabase(user.uid,personalScope);
+    const hasCategoryDirty=categoryDirty();
     const canMergeLocal=
       localDirty &&
       (!lastCloudUid||lastCloudUid===user.uid);
 
+    let useSessionCache=false;
+
+    try {
+      useSessionCache=
+        sessionStorage.getItem(cloudSessionKey(scopeKey))==='1' &&
+        lastCloudUid===user.uid &&
+        !pending &&
+        !localDirty &&
+        !hasCategoryDirty;
+    } catch {}
+
+    // F5 in the same tab: localStorage already mirrors the last successful
+    // cloud state. Avoid re-reading every word from Firestore.
+    if(useSessionCache){
+      cloudShadowRef.current.set(scopeKey,localDatabase);
+      dbRef.current=localDatabase;
+      setDB(localDatabase);
+      setCloudScope(personalScope);
+      setNotice('이 브라우저에 동기화된 단어장을 사용합니다.');
+      return;
+    }
+
     void loadCloudDatabase(user,personalScope).then(cloudDatabase=>{
+      cloudShadowRef.current.set(scopeKey,cloudDatabase);
+
       let next=cloudDatabase;
 
       if(pending){
@@ -725,7 +771,6 @@ export default function Home() {
         next=mergeDatabasesForLogin(next,localDatabase);
       }
 
-      const hasCategoryDirty=categoryDirty();
       if(hasCategoryDirty){
         next=mergeCategorySnapshot(next,user.uid);
       }
@@ -734,7 +779,7 @@ export default function Home() {
         if(localDirty&&lastCloudUid&&lastCloudUid!==user.uid){
           localStorage.setItem(
             `${LOCAL_ACCOUNT_BACKUP_PREFIX}:${lastCloudUid}`,
-            JSON.stringify(localDatabase)
+            JSON.stringify(localDatabase),
           );
           localStorage.removeItem(LOCAL_DIRTY_KEY);
         }
@@ -748,22 +793,25 @@ export default function Home() {
       setCloudScope(personalScope);
 
       if(pending||canMergeLocal||hasCategoryDirty){
-        queueCloudSave(user,personalScope,next);
+        void queueCloudSave(user,personalScope,next);
+
         setNotice(
           canMergeLocal
             ?'로그아웃 중 저장한 단어를 Firebase 단어장과 병합하고 있습니다.'
-            :'저장 중이던 단어장을 복구하고 Firebase에 다시 동기화하고 있습니다.'
+            :'저장 중이던 단어장을 복구하고 Firebase에 다시 동기화하고 있습니다.',
         );
-      }else if(localDirty&&lastCloudUid&&lastCloudUid!==user.uid){
-        setNotice('다른 계정의 로컬 변경사항은 자동 병합하지 않고 별도 백업했습니다.');
       }else{
+        markCloudSession(scopeKey);
         setNotice('Firebase 단어장을 불러왔습니다.');
       }
     }).catch(err=>{
-      setNotice(err instanceof Error?err.message:'Firebase 단어장을 불러오지 못했습니다.');
+      setNotice(
+        err instanceof Error
+          ?err.message
+          :'Firebase 단어장을 불러오지 못했습니다.',
+      );
     });
   }),[]);
-
   useEffect(()=>()=>stopPronunciation(),[page,quiz?.index,quiz?.mode]);
   function toggleAutoPronunciation(){
     const enabled=!autoPronunciation;
@@ -785,34 +833,65 @@ export default function Home() {
     const frame=requestAnimationFrame(()=>typingInputRef.current?.focus());
     return ()=>cancelAnimationFrame(frame);
   },[quiz?.index,quiz?.mode,graded]);
-  function queueCloudSave(user:User,scope:CloudScope,next:Database){
+  function queueCloudSave(
+    user:User,
+    scope:CloudScope,
+    next:Database,
+  ):Promise<boolean>{
     let serialized:string;
 
     try {
       serialized=writePendingCloudDatabase(user.uid,scope,next);
     } catch {
       setNotice('브라우저에 클라우드 저장 대기 데이터를 기록하지 못했습니다.');
-      return;
+      return Promise.resolve(false);
     }
 
+    const scopeKey=cloudScopeKey(user.uid,scope);
+
     cloudSaveQueueRef.current=cloudSaveQueueRef.current
-      .catch(()=>{})
+      .catch(()=>false)
       .then(async()=>{
         try {
-          await saveCloudDatabase(user,scope,next);
+          let previous=cloudShadowRef.current.get(scopeKey);
+
+          // This happens only when switching to a cloud scope that has not
+          // been loaded in the current tab. Pay for one full load once,
+          // then all following saves are incremental.
+          if(!previous){
+            previous=await loadCloudDatabase(user,scope);
+            cloudShadowRef.current.set(scopeKey,previous);
+          }
+
+          await syncCloudDatabase(user,scope,previous,next);
+          cloudShadowRef.current.set(scopeKey,next);
+          markCloudSession(scopeKey);
+
           clearPendingCloudDatabase(user.uid,scope,serialized);
-          if(scope.type==='personal')clearCategoryDirtyIfSaved(user.uid,next);
-          if(scope.type==='personal')localStorage.removeItem(LOCAL_DIRTY_KEY);
+
+          const stillPending=
+            readPendingCloudDatabase(user.uid,scope)!==null;
+
+          if(scope.type==='personal'){
+            clearCategoryDirtyIfSaved(user.uid,next);
+            if(!stillPending){
+              localStorage.removeItem(LOCAL_DIRTY_KEY);
+            }
+          }
+
+          return true;
         } catch(err) {
           setNotice(
             err instanceof Error
               ?`Firebase 저장 실패: ${err.message} · 로컬에는 보관되어 있습니다.`
-              :'Firebase 저장에 실패했습니다. 로컬에는 보관되어 있습니다.'
+              :'Firebase 저장에 실패했습니다. 로컬에는 보관되어 있습니다.',
           );
+          return false;
         }
       });
-  }
 
+    return cloudSaveQueueRef.current;
+  }
   function commit(next: Database) {
     if(storageError){
       setNotice('저장소 오류를 해결한 후 다시 시도해주세요.');
@@ -884,49 +963,85 @@ export default function Home() {
   }
   async function saveToCloud() {
     const scope=selectedCloudScope();
-    if(!firebaseUser){setNotice('먼저 로그인해주세요.');return;}
-    if(!scope){setNotice('그룹 이름을 입력해주세요.');return;}
+
+    if(!firebaseUser){
+      setNotice('먼저 로그인해주세요.');
+      return;
+    }
+
+    if(!scope){
+      setNotice('그룹 이름을 입력해주세요.');
+      return;
+    }
 
     setCloudBusy(true);
+
     try {
-      await cloudSaveQueueRef.current.catch(()=>{});
+      await cloudSaveQueueRef.current.catch(()=>false);
 
-      const current=dbRef.current;
-      const serialized=writePendingCloudDatabase(firebaseUser.uid,scope,current);
+      const saved=await queueCloudSave(
+        firebaseUser,
+        scope,
+        dbRef.current,
+      );
 
-      await saveCloudDatabase(firebaseUser,scope,current);
-      clearPendingCloudDatabase(firebaseUser.uid,scope,serialized);
-      if(scope.type==='personal')clearCategoryDirtyIfSaved(firebaseUser.uid,current);
-      if(scope.type==='personal')localStorage.removeItem(LOCAL_DIRTY_KEY);
+      if(!saved)return;
 
       setCloudScope(scope);
-      setNotice(scope.type==='personal'?'내 단어장을 클라우드에 저장했습니다.':'그룹 단어장을 클라우드에 저장했습니다.');
-    } catch(err) {
-      setNotice(err instanceof Error?err.message:'클라우드 저장에 실패했습니다.');
+      setNotice(
+        scope.type==='personal'
+          ?'내 단어장을 클라우드에 저장했습니다.'
+          :'그룹 단어장을 클라우드에 저장했습니다.',
+      );
     } finally {
       setCloudBusy(false);
     }
   }
   async function loadFromCloud() {
     const scope=selectedCloudScope();
-    if(!firebaseUser){setNotice('먼저 로그인해주세요.');return;}
-    if(!scope){setNotice('그룹 이름을 입력해주세요.');return;}
+
+    if(!firebaseUser){
+      setNotice('먼저 로그인해주세요.');
+      return;
+    }
+
+    if(!scope){
+      setNotice('그룹 이름을 입력해주세요.');
+      return;
+    }
+
     setCloudBusy(true);
+
     try {
-      await cloudSaveQueueRef.current.catch(()=>{});
+      await cloudSaveQueueRef.current.catch(()=>false);
+
       let next=await loadCloudDatabase(firebaseUser,scope);
+      const scopeKey=cloudScopeKey(firebaseUser.uid,scope);
+
+      cloudShadowRef.current.set(scopeKey,next);
+      markCloudSession(scopeKey);
+
       if(scope.type==='personal'&&categoryDirty()){
         next=mergeCategorySnapshot(next,firebaseUser.uid);
       }
+
       if(commit(next)){
         setCloudScope(scope);
         setQuiz(null);
         setEditor(null);
         setDetail(null);
-        setNotice(scope.type==='personal'?'내 클라우드 단어장을 불러왔습니다.':'그룹 단어장을 불러왔습니다.');
+        setNotice(
+          scope.type==='personal'
+            ?'내 클라우드 단어장을 불러왔습니다.'
+            :'그룹 단어장을 불러왔습니다.',
+        );
       }
     } catch(err) {
-      setNotice(err instanceof Error?err.message:'클라우드 불러오기에 실패했습니다.');
+      setNotice(
+        err instanceof Error
+          ?err.message
+          :'클라우드 불러오기에 실패했습니다.',
+      );
     } finally {
       setCloudBusy(false);
     }
@@ -1241,7 +1356,7 @@ export default function Home() {
     const latest=current.words.find(w=>w.id===word.id);
     if(!latest){setQuiz(null);busyGrade.current=false;return;}
 
-    const reviews=[...current.reviews,{date:localDate(),correct,wordId:word.id}];
+    const reviews=[...current.reviews,{id:crypto.randomUUID(),date:localDate(),correct,wordId:word.id}];
     const nextDb={
       ...current,
       words:current.words.map(w=>w.id===word.id?schedule(w,correct):w),
