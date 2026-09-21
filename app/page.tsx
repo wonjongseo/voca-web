@@ -671,6 +671,7 @@ export default function Home() {
   const [firebaseUser,setFirebaseUser] = useState<User|null>(null);
   const [authEmail,setAuthEmail] = useState('');
   const [authPassword,setAuthPassword] = useState('');
+  const [authMode,setAuthMode] = useState<'login'|'signup'|null>(null);
   const [cloudScope,setCloudScope] = useState<CloudScope>({type:'personal'});
   const [groupId,setGroupId] = useState('');
   const [cloudBusy,setCloudBusy] = useState(false);
@@ -715,6 +716,7 @@ export default function Home() {
   useEffect(()=>listenFirebaseUser(user=>{
     firebaseUserRef.current=user;
     setFirebaseUser(user);
+    if(user)setAuthMode(null);
     setQuiz(null);
     setEditor(null);
     setDetail(null);
@@ -1739,24 +1741,130 @@ export default function Home() {
     item=>!meaningCompleted.includes(item.key)
   ); // MEANING_SHOW_MISSING_ANSWERS_V1
   const week=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);const key=localDate(d);return{day:['일','월','화','수','목','금','토'][d.getDay()],count:db.reviews.filter(r=>r.date===key).length,key};});
+  if(!firebaseUser&&authMode){
+    const signup=authMode==='signup';
+
+    return <div className="auth-page">
+      <div className="auth-page-brand">
+        <a className="brand" href="/" aria-label="Leafy 홈" onClick={e=>{e.preventDefault();setAuthMode(null);}}>
+          <span className="brand-symbol"><Leaf size={24}/></span>
+          Leafy<span className="brand-dot">.</span>
+        </a>
+      </div>
+
+      <main className="auth-page-main">
+        <button
+          type="button"
+          className="auth-back"
+          onClick={()=>setAuthMode(null)}
+        >
+          <ArrowLeft size={17}/>
+          단어장으로 돌아가기
+        </button>
+
+        <section className="auth-card">
+          <div className="auth-heading">
+            <span className="tiny-label"><Cloud size={13}/> LEAFY CLOUD</span>
+            <h1>{signup?'회원가입':'로그인'}</h1>
+            <p>
+              {signup
+                ?'계정을 만들면 여러 기기에서 같은 단어장을 사용할 수 있어요.'
+                :'내 단어장을 다른 기기에서도 이어서 학습하세요.'}
+            </p>
+          </div>
+
+          {!firebaseConfigured
+            ?<div className="cloud-disabled">
+              <code>.env</code>
+              <span>Firebase 설정이 필요합니다.</span>
+            </div>
+            :<>
+              <form
+                className="auth-form"
+                onSubmit={e=>{
+                  e.preventDefault();
+                  void handleEmailAuth(signup);
+                }}
+              >
+                <label>
+                  이메일
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="email@example.com"
+                    value={authEmail}
+                    onChange={e=>setAuthEmail(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label>
+                  비밀번호
+                  <input
+                    type="password"
+                    autoComplete={signup?'new-password':'current-password'}
+                    placeholder={signup?'6자 이상 입력':'비밀번호'}
+                    value={authPassword}
+                    onChange={e=>setAuthPassword(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  className="button primary auth-submit"
+                  disabled={cloudBusy}
+                >
+                  {cloudBusy?'처리 중...':signup?'회원가입':'로그인'}
+                </button>
+              </form>
+
+              <div className="auth-divider"><span>또는</span></div>
+
+              <button
+                type="button"
+                className="button auth-google"
+                disabled={cloudBusy}
+                onClick={()=>void handleGoogleAuth()}
+              >
+                Google로 계속하기
+              </button>
+
+              <div className="auth-switch">
+                <span>{signup?'이미 계정이 있나요?':'아직 계정이 없나요?'}</span>
+                <button
+                  type="button"
+                  onClick={()=>setAuthMode(signup?'login':'signup')}
+                >
+                  {signup?'로그인':'회원가입'}
+                </button>
+              </div>
+            </>
+          }
+        </section>
+      </main>
+    </div>;
+  }
+
   return <div className="app-shell">
     <aside className="sidebar"><a className="brand" href="/" aria-label="Leafy 홈"><span className="brand-symbol"><Leaf size={24}/></span>Leafy<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'wrong',label:'오답노트',icon:RotateCcw},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}{id==='wrong'&&wrongWords.length>0&&<span className="nav-count wrong-count">{wrongWords.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="little-sprout"><Sprout size={29}/></div><strong>조금씩, 매일, 꾸준히.</strong><p>오늘의 단어가<br/>내일의 나를 넓혀줘요.</p><div className="local-indicator"><span/>이 브라우저에 저장됨</div></div></aside>
-    <div className="main-area"><header className="topbar"><div><span className="muted">나의 학습 공간</span><ChevronRight size={14}/><span>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':page==='wrong'?'오답노트':'학습 기록'}</span></div><span className="date-label">{new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short'}).format(now)}</span><details className="cloud-account-menu">
-  <summary
-    className="cloud-account-trigger"
-    title={firebaseUser?`${firebaseUser.email??'로그인한 사용자'} · 클라우드 단어장`:'클라우드 로그인'}
-  >
-    <Cloud size={16}/>
-    <span>{firebaseUser?(firebaseUser.email??'로그인됨'):'로그인'}</span>
-  </summary>
-  <div className="cloud-account-popover">
-    <div className="cloud-account-popover-head">
-      <div>
-        <span className="tiny-label"><Cloud size={13}/> FIREBASE CLOUD</span>
-        <strong>{firebaseUser?'클라우드 단어장':'계정 로그인'}</strong>
-        {firebaseUser&&<span className="cloud-account-email">{firebaseUser.email??'Firebase 사용자'}</span>}
-      </div>
-      {firebaseUser&&
+    <div className="main-area"><header className="topbar"><div><span className="muted">나의 학습 공간</span><ChevronRight size={14}/><span>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':page==='wrong'?'오답노트':'학습 기록'}</span></div><span className="date-label">{new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short'}).format(now)}</span>{firebaseUser
+  ?<details className="cloud-account-menu">
+    <summary
+      className="cloud-account-trigger"
+      title={`${firebaseUser.email??'로그인한 사용자'} · 클라우드 단어장`}
+    >
+      <Cloud size={16}/>
+      <span>{firebaseUser.email??'로그인됨'}</span>
+    </summary>
+
+    <div className="cloud-account-popover">
+      <div className="cloud-account-popover-head">
+        <div>
+          <span className="tiny-label"><Cloud size={13}/> FIREBASE CLOUD</span>
+          <strong>클라우드 단어장</strong>
+          <span className="cloud-account-email">{firebaseUser.email??'Firebase 사용자'}</span>
+        </div>
         <button
           className="button text-button"
           disabled={cloudBusy}
@@ -1764,101 +1872,63 @@ export default function Home() {
         >
           <LogOut size={15}/>로그아웃
         </button>
-      }
-    </div>
-
-    {firebaseConfigured
-      ?firebaseUser
-        ?<div className="cloud-actions">
-          <div className="cloud-scope" role="radiogroup" aria-label="클라우드 저장 위치">
-            <label>
-              <input
-                type="radio"
-                checked={cloudScope.type==='personal'}
-                onChange={()=>setCloudScope({type:'personal'})}
-              />
-              내 단어장
-            </label>
-            <label>
-              <input
-                type="radio"
-                checked={cloudScope.type==='group'}
-                onChange={()=>setCloudScope({type:'group',groupId:groupId.trim()})}
-              />
-              <Users size={15}/>그룹
-            </label>
-            {cloudScope.type==='group'&&
-              <input
-                aria-label="그룹 이름"
-                placeholder="group-name"
-                value={groupId}
-                onChange={e=>setGroupId(e.target.value)}
-              />
-            }
-          </div>
-          <div className="cloud-buttons">
-            <button
-              className="button"
-              disabled={cloudBusy}
-              onClick={()=>void loadFromCloud()}
-            >
-              클라우드 불러오기
-            </button>
-            <button
-              className="button primary"
-              disabled={cloudBusy}
-              onClick={()=>void saveToCloud()}
-            >
-              현재 단어장 저장
-            </button>
-          </div>
-        </div>
-        :<div className="cloud-login">
-          <input
-            type="email"
-            aria-label="이메일"
-            placeholder="email@example.com"
-            value={authEmail}
-            onChange={e=>setAuthEmail(e.target.value)}
-          />
-          <input
-            type="password"
-            aria-label="비밀번호"
-            placeholder="비밀번호"
-            value={authPassword}
-            onChange={e=>setAuthPassword(e.target.value)}
-          />
-          <div className="cloud-buttons">
-            <button
-              className="button"
-              disabled={cloudBusy}
-              onClick={()=>void handleEmailAuth(false)}
-            >
-              로그인
-            </button>
-            <button
-              className="button"
-              disabled={cloudBusy}
-              onClick={()=>void handleEmailAuth(true)}
-            >
-              가입
-            </button>
-            <button
-              className="button primary"
-              disabled={cloudBusy}
-              onClick={()=>void handleGoogleAuth()}
-            >
-              Google 로그인
-            </button>
-          </div>
-        </div>
-      :<div className="cloud-disabled">
-        <code>.env</code>
-        <span>Firebase 설정 필요</span>
       </div>
-    }
-  </div>
-</details><div className="avatar">L</div></header>
+
+      <div className="cloud-actions">
+        <div className="cloud-scope" role="radiogroup" aria-label="클라우드 저장 위치">
+          <label>
+            <input
+              type="radio"
+              checked={cloudScope.type==='personal'}
+              onChange={()=>setCloudScope({type:'personal'})}
+            />
+            내 단어장
+          </label>
+          <label>
+            <input
+              type="radio"
+              checked={cloudScope.type==='group'}
+              onChange={()=>setCloudScope({type:'group',groupId:groupId.trim()})}
+            />
+            <Users size={15}/>그룹
+          </label>
+          {cloudScope.type==='group'&&
+            <input
+              aria-label="그룹 이름"
+              placeholder="group-name"
+              value={groupId}
+              onChange={e=>setGroupId(e.target.value)}
+            />
+          }
+        </div>
+
+        <div className="cloud-buttons">
+          <button
+            className="button"
+            disabled={cloudBusy}
+            onClick={()=>void loadFromCloud()}
+          >
+            클라우드 불러오기
+          </button>
+          <button
+            className="button primary"
+            disabled={cloudBusy}
+            onClick={()=>void saveToCloud()}
+          >
+            현재 단어장 저장
+          </button>
+        </div>
+      </div>
+    </div>
+  </details>
+  :<button
+    type="button"
+    className="button topbar-login"
+    onClick={()=>setAuthMode('login')}
+  >
+    로그인
+  </button>
+}<div className="avatar">L</div></header>
     <main><section className="page-heading"><div><p className="eyebrow">{page==='words'?'WORDS THAT STAY WITH YOU':page==='study'?'A LITTLE PRACTICE, EVERY DAY':page==='wrong'?'WORDS TO MEET AGAIN':'YOUR GROWTH, ONE WORD AT A TIME'}</p><h1>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':page==='wrong'?'오답노트':'학습 기록'}</h1><p>{page==='words'?'발견한 단어를 모아, 나만의 언어로 만들어보세요.':page==='study'?'한 번 더 떠올리는 순간, 단어가 오래 남아요.':page==='wrong'?'틀린 단어는 다음 퀴즈들에 다시 섞여 나오며, 여러 번 맞히면 완료돼요.':'작은 반복이 쌓여, 더 넓은 어휘가 됩니다.'}</p></div>{page==='words'&&<button className="button primary" onClick={()=>setEditor(newWordForEditor())} disabled={!ready||!!storageError}><Plus size={18}/>단어 추가</button>}</section>
     {storageError&&<div role="alert" className="error-banner">{storageError}</div>}
 
