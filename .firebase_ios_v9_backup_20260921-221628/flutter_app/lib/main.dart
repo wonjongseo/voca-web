@@ -23,28 +23,10 @@ Future<bool> _initializeFirebase() async {
 
   try {
     await Firebase.initializeApp();
-    debugPrint(
-      'Firebase native initialization success: '
-      '${Firebase.app().options.projectId}',
-    );
     return true;
-  } catch (error, stackTrace) {
-    debugPrint('Firebase native initialization failed: $error');
-    debugPrintStack(stackTrace: stackTrace);
-
-    if (!FirebaseConfig.configured) {
-      debugPrint(
-        'Firebase dart-define fallback is not configured. '
-        'Starting in guest mode.',
-      );
-      return false;
-    }
-
+  } catch (_) {
+    if (!FirebaseConfig.configured) return false;
     await Firebase.initializeApp(options: FirebaseConfig.options);
-    debugPrint(
-      'Firebase dart-define initialization success: '
-      '${Firebase.app().options.projectId}',
-    );
     return true;
   }
 }

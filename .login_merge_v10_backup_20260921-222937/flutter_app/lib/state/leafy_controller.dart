@@ -228,8 +228,8 @@ class LeafyController extends ChangeNotifier {
     user = auth!.currentUser;
     _authUid = user?.uid;
 
-    if (user != null) {
-      await _mergeGuestIntoPersonalCloudIfNeeded();
+    if (user != null && preferences.getBool(_guestDirtyKey) == true) {
+      await _mergeGuestIntoPersonalCloud();
     } else {
       await selectScope(null);
     }
@@ -241,18 +241,12 @@ class LeafyController extends ChangeNotifier {
       _authUid = next?.uid;
       user = next;
 
-      if (next != null && wasGuest) {
-        // 로그인 시에는 다른 기기에서 변경된 최신 Firestore를 반드시 반영하고,
-        // 실제 게스트 데이터가 있으면 dirty flag와 무관하게 병합한다.
-        unawaited(_mergeGuestIntoPersonalCloudIfNeeded());
+      if (next != null &&
+          wasGuest &&
+          preferences.getBool(_guestDirtyKey) == true) {
+        unawaited(_mergeGuestIntoPersonalCloud());
       } else {
-        // 계정이 바뀌거나 로그아웃되는 경우 캐시보다 현재 scope를 다시 선택한다.
-        unawaited(
-          selectScope(
-            null,
-            forceRemote: next != null,
-          ),
-        );
+        unawaited(selectScope(null));
       }
     });
   }
@@ -321,31 +315,6 @@ class LeafyController extends ChangeNotifier {
         forceRemote: true,
       );
 
-  Future<void> _mergeGuestIntoPersonalCloudIfNeeded() async {
-    final currentUser = user;
-
-    if (currentUser == null || firestore == null) {
-      await selectScope(null);
-      return;
-    }
-
-    final guestRepository = GuestRepository(preferences);
-    final guest = await guestRepository.load();
-
-    final hasGuestData =
-        guest.words.isNotEmpty ||
-        guest.reviews.isNotEmpty ||
-        guest.categories.isNotEmpty;
-
-    if (hasGuestData) {
-      await _mergeGuestIntoPersonalCloud();
-      return;
-    }
-
-    // 로그인 직후에는 캐시를 신뢰하지 않고 원격 Firestore를 새로 읽는다.
-    await selectScope(null, forceRemote: true);
-  }
-
   Future<void> _mergeGuestIntoPersonalCloud() async {
     final currentUser = user;
 
@@ -376,9 +345,6 @@ class LeafyController extends ChangeNotifier {
       loaded = true;
 
       await _writeCloudCache(currentUser.uid, null, merged);
-
-      // 병합 성공 후 guest notebook을 비워 다음 로그인 때 중복 병합하지 않는다.
-      await guestRepository.replaceAll(const Notebook());
       await preferences.setBool(_guestDirtyKey, false);
     } catch (exception) {
       if (generation == _generation) {
