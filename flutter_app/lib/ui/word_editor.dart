@@ -6,37 +6,33 @@ import 'app_theme.dart';
 Future<VocabWord?> editWord(
   BuildContext context, {
   VocabWord? word,
-}) =>
-    showDialog<VocabWord>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _WordEditor(word: word),
-    );
+}) {
+  return Navigator.of(context).push<VocabWord>(
+    MaterialPageRoute(
+      builder: (_) => WordEditorScreen(word: word),
+    ),
+  );
+}
 
-class _WordEditor extends StatefulWidget {
-  const _WordEditor({this.word});
+class WordEditorScreen extends StatefulWidget {
+  const WordEditorScreen({super.key, this.word});
+
   final VocabWord? word;
 
   @override
-  State<_WordEditor> createState() => _WordEditorState();
+  State<WordEditorScreen> createState() => _WordEditorScreenState();
 }
 
-class _WordEditorState extends State<_WordEditor> {
+class _WordEditorScreenState extends State<WordEditorScreen> {
   final form = GlobalKey<FormState>();
 
   late final fields = <String, TextEditingController>{
     'word': TextEditingController(text: widget.word?.word ?? ''),
     'meaning': TextEditingController(text: widget.word?.meanings.join('\n') ?? ''),
     'category': TextEditingController(text: widget.word?.category ?? ''),
-    'example': TextEditingController(
-      text: widget.word?.examples.firstOrNull?['text'] ?? '',
-    ),
-    'translation': TextEditingController(
-      text: widget.word?.examples.firstOrNull?['translation'] ?? '',
-    ),
-    'synonyms': TextEditingController(
-      text: widget.word?.synonymEntries.join(', ') ?? '',
-    ),
+    'example': TextEditingController(text: widget.word?.examples.firstOrNull?['text'] ?? ''),
+    'translation': TextEditingController(text: widget.word?.examples.firstOrNull?['translation'] ?? ''),
+    'synonyms': TextEditingController(text: widget.word?.synonymEntries.join(', ') ?? ''),
     'memo': TextEditingController(text: widget.word?.text('memo') ?? ''),
   };
 
@@ -49,123 +45,144 @@ class _WordEditorState extends State<_WordEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 30),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 620),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
-            child: Form(
-              key: form,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget build(BuildContext context) {
+    final editing = widget.word != null;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(editing ? '단어 수정' : '새 단어 추가'),
+        actions: [
+          TextButton(
+            onPressed: _save,
+            child: const Text('저장', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: SafeArea(
+        child: Form(
+          key: form,
+          child: ListView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 40),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: LeafyTheme.surfaceSoft,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: LeafyTheme.surfaceSoft,
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                          child: const Icon(
-                            Icons.edit_note_rounded,
-                            color: LeafyTheme.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            widget.word == null ? '새 단어 추가' : '단어 수정',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 22),
-                    TextFormField(
-                      controller: fields['word'],
-                      autofocus: widget.word == null,
-                      decoration: const InputDecoration(labelText: '영어 단어'),
-                      validator: (value) =>
-                          (value ?? '').trim().isEmpty ? '단어를 입력해주세요.' : null,
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: fields['meaning'],
-                      minLines: 2,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: '의미',
-                        hintText: '큰 의미는 줄바꿈 / 같은 의미 표현은 쉼표 또는 ·',
+                    const Icon(Icons.edit_note_rounded, color: LeafyTheme.primary, size: 30),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        editing
+                            ? '단어의 뜻, 예문, 유의어와 메모를 편하게 수정할 수 있어요.'
+                            : '단어와 의미만 입력해도 저장할 수 있어요. 나머지는 필요할 때 추가하세요.',
+                        style: const TextStyle(color: LeafyTheme.muted, height: 1.45),
                       ),
-                      validator: (value) =>
-                          (value ?? '').trim().isEmpty ? '의미를 입력해주세요.' : null,
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: fields['category'],
-                      decoration: const InputDecoration(labelText: '카테고리'),
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: fields['example'],
-                      decoration: const InputDecoration(labelText: '예문'),
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: fields['translation'],
-                      decoration: const InputDecoration(labelText: '예문 해석'),
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: fields['synonyms'],
-                      decoration: const InputDecoration(
-                        labelText: '유의어',
-                        hintText: '쉼표로 구분',
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: fields['memo'],
-                      minLines: 3,
-                      maxLines: 5,
-                      decoration: const InputDecoration(labelText: '메모'),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('취소'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: _save,
-                            icon: const Icon(Icons.check_rounded),
-                            label: const Text('저장'),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(height: 20),
+              const Text('기본 정보', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: fields['word'],
+                autofocus: !editing,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: '영어 단어',
+                  hintText: '예: provide',
+                  prefixIcon: Icon(Icons.abc_rounded),
+                ),
+                validator: (value) => (value ?? '').trim().isEmpty ? '단어를 입력해주세요.' : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: fields['meaning'],
+                minLines: 3,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: '의미',
+                  hintText: '큰 의미는 줄바꿈 / 같은 의미 표현은 쉼표 또는 ·',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.translate_rounded),
+                ),
+                validator: (value) => (value ?? '').trim().isEmpty ? '의미를 입력해주세요.' : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: fields['category'],
+                decoration: const InputDecoration(
+                  labelText: '카테고리',
+                  hintText: '예: TOEIC 700',
+                  prefixIcon: Icon(Icons.folder_outlined),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text('예문', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: fields['example'],
+                minLines: 2,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: '예문',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.format_quote_rounded),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: fields['translation'],
+                minLines: 2,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: '예문 해석',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.subtitles_outlined),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text('추가 정보', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: fields['synonyms'],
+                decoration: const InputDecoration(
+                  labelText: '유의어',
+                  hintText: '쉼표로 구분',
+                  prefixIcon: Icon(Icons.compare_arrows_rounded),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: fields['memo'],
+                minLines: 4,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  labelText: '메모',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.notes_rounded),
+                ),
+              ),
+              const SizedBox(height: 28),
+              FilledButton.icon(
+                onPressed: _save,
+                icon: const Icon(Icons.check_rounded),
+                label: Text(editing ? '수정 내용 저장' : '단어 저장'),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    );
+  }
 
   void _save() {
     if (!form.currentState!.validate()) return;
