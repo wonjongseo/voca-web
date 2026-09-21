@@ -824,3 +824,23 @@
 .csv-import-guide-notes p{
   margin:3px 0;
 }
+
+
+/* WRONG_NOTE_RESET_V1 */
+.wrong-section-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+@media(max-width:620px){
+  .wrong-section-actions{
+    width:100%;
+  }
+
+  .wrong-section-actions .button{
+    flex:1;
+  }
+}
