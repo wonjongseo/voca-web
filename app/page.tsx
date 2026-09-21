@@ -132,8 +132,10 @@ function stopPronunciation(){
 }
 
 function acceptsSpelling(answer:string, expected:string) {
-  const a=answer.trim().toLowerCase();
-  const b=expected.trim().toLowerCase();
+  const normalize=(value:string)=>
+    value.trim().toLowerCase().replaceAll('.','');
+  const a=normalize(answer);
+  const b=normalize(expected);
   if(a===b)return true;
   if(Math.abs(a.length-b.length)>1)return false;
   if(a.length===b.length){
@@ -182,6 +184,7 @@ function removeMeaningContext(value:string) {
 function normalizeMeaningFragment(value:string) {
   return removeMeaningContext(value)
     .normalize('NFKC')
+    .replace(/\./g,'')
     .replace(/\s+/g,'')
     .toLocaleLowerCase('ko-KR');
 }
@@ -227,6 +230,8 @@ function splitMeaningPartsOutsideParentheses(value:string) {
     const isDelimiter=
       char===',' ||
       char==='，' ||
+      char===';' ||
+      char==='；' ||
       char==='·' ||
       char==='ㆍ';
 
@@ -2077,7 +2082,7 @@ export default function Home() {
 
       <p className="meaning-step-note">
         괄호 안의 설명은 입력하지 않아도 돼요.
-        쉼표나 · 로 등록한 표현은 하나씩 맞힐 수 있어요.
+        쉼표, 세미콜론 또는 · 로 등록한 표현은 하나씩 맞힐 수 있어요.
         힌트를 사용해도 오답 처리되지 않으며,
         등록한 모든 의미와 표현을 직접 입력하면 정답으로 처리해요.
       </p>

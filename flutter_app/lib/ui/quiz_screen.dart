@@ -565,7 +565,7 @@ class _QuizScreenState extends State<QuizScreen> {
         ),
         const SizedBox(height: 12),
         const Text(
-          '괄호 안 설명은 입력하지 않아도 돼요. 쉼표나 · 로 등록한 표현은 하나씩 맞힐 수 있고, 힌트 사용은 오답 처리되지 않아요.',
+          '괄호 안 설명은 입력하지 않아도 돼요. 쉼표, 세미콜론 또는 · 로 등록한 표현은 하나씩 맞힐 수 있고, 힌트 사용은 오답 처리되지 않아요.',
           style: TextStyle(
             color: LeafyTheme.muted,
             fontSize: 10,

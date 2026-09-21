@@ -79,8 +79,10 @@ List<VocabWord> weightedWordsWithoutReplacement(
 }
 
 bool acceptsSpelling(String answer, String expected) {
-  final a = answer.trim().toLowerCase();
-  final b = expected.trim().toLowerCase();
+  String normalize(String value) =>
+      value.trim().toLowerCase().replaceAll('.', '');
+  final a = normalize(answer);
+  final b = normalize(expected);
   if (a == b) return true;
   if ((a.length - b.length).abs() > 1) return false;
   if (a.length == b.length) {
@@ -146,7 +148,10 @@ String removeMeaningContext(String value) => value
     .trim();
 
 String normalizeMeaningFragment(String value) =>
-    removeMeaningContext(value).replaceAll(RegExp(r'\s+'), '').toLowerCase();
+    removeMeaningContext(value)
+        .replaceAll('.', '')
+        .replaceAll(RegExp(r'\s+'), '')
+        .toLowerCase();
 
 List<String> splitMeaningPartsOutsideParentheses(String value) {
   final parts = <String>[];
@@ -180,7 +185,13 @@ List<String> splitMeaningPartsOutsideParentheses(String value) {
       buffer.write(char);
       continue;
     }
-    final delimiter = char == ',' || char == '，' || char == '·' || char == 'ㆍ';
+    final delimiter =
+        char == ',' ||
+        char == '，' ||
+        char == ';' ||
+        char == '；' ||
+        char == '·' ||
+        char == 'ㆍ';
     if (delimiter && roundDepth == 0 && fullWidthDepth == 0) {
       push();
       continue;
