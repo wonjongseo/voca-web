@@ -92,7 +92,7 @@ class VocabWord {
     ..remove('_reviewEvents');
 
   VocabWord schedule(bool correct, DateTime now) {
-    final next = correct ? (level + 1).clamp(0, 6) : 0;
+    final next = correct ? (level + 1).clamp(0, 6).toInt() : 0;
     final duration = correct
         ? Duration(days: [0, 1, 3, 7, 14, 30, 60][next])
         : const Duration(minutes: 10);

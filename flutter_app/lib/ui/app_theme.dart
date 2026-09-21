@@ -23,7 +23,7 @@ class LeafyTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: background,
-      appBarTheme: const AppBarTheme(
+      appBarTheme: const AppBarThemeData(
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: background,
@@ -40,7 +40,7 @@ class LeafyTheme {
           side: const BorderSide(color: border),
         ),
       ),
-      inputDecorationTheme: InputDecorationTheme(
+      inputDecorationTheme: InputDecorationThemeData(
         filled: true,
         fillColor: surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

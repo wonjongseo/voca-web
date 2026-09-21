@@ -10,8 +10,13 @@ const _reviewStorageVersion = 3;
 abstract class NotebookRepository {
   Future<Notebook> load();
   Future<void> putWord(VocabWord word);
+  Future<void> putWords(List<VocabWord> words);
   Future<void> deleteWord(String id);
   Future<void> review(VocabWord word, Map<String, dynamic> review);
+  Future<void> replaceReviewEvents(
+    Set<String> wordIds,
+    List<Map<String, dynamic>> reviews,
+  );
   Future<void> setCategories(List<String> categories);
 }
 
@@ -52,9 +57,27 @@ class GuestRepository implements NotebookRepository {
       );
 
   @override
+  Future<void> putWords(List<VocabWord> words) {
+    if (words.isEmpty) return Future<void>.value();
+
+    final ids = words.map((word) => word.id).toSet();
+    return _save(
+      _book.replace(
+        words: [
+          ..._book.words.where((word) => !ids.contains(word.id)),
+          ...words,
+        ],
+      ),
+    );
+  }
+
+  @override
   Future<void> deleteWord(String id) => _save(
         _book.replace(
           words: _book.words.where((word) => word.id != id).toList(),
+          reviews: _book.reviews
+              .where((review) => review['wordId'] != id)
+              .toList(),
         ),
       );
 
@@ -67,6 +90,15 @@ class GuestRepository implements NotebookRepository {
           reviews: [..._book.reviews, review],
         ),
       );
+
+  @override
+  Future<void> replaceReviewEvents(
+    Set<String> wordIds,
+    List<Map<String, dynamic>> reviews,
+  ) {
+    if (wordIds.isEmpty) return Future<void>.value();
+    return _save(_book.replace(reviews: reviews));
+  }
 
   @override
   Future<void> setCategories(List<String> categories) =>
@@ -325,6 +357,22 @@ class CloudRepository implements NotebookRepository {
   }
 
   @override
+  Future<void> putWords(List<VocabWord> words) async {
+    if (words.isEmpty) return;
+
+    final operations = <void Function(WriteBatch batch)>[
+      for (final word in words)
+        (batch) => batch.set(
+              root.collection('words').doc(word.id),
+              _wordData(word),
+              SetOptions(merge: true),
+            ),
+    ];
+
+    await _commitBatches(operations);
+  }
+
+  @override
   Future<void> deleteWord(String id) {
     return root.collection('words').doc(id).delete();
   }
@@ -342,6 +390,29 @@ class CloudRepository implements NotebookRepository {
           ),
           SetOptions(merge: true),
         );
+  }
+
+  @override
+  Future<void> replaceReviewEvents(
+    Set<String> wordIds,
+    List<Map<String, dynamic>> reviews,
+  ) async {
+    if (wordIds.isEmpty) return;
+
+    final operations = <void Function(WriteBatch batch)>[
+      for (final wordId in wordIds)
+        (batch) => batch.set(
+              root.collection('words').doc(wordId),
+              {
+                '_reviewEvents': _reviewEventsFor(reviews, wordId),
+                'updatedAt': FieldValue.serverTimestamp(),
+                'updatedBy': uid,
+              },
+              SetOptions(merge: true),
+            ),
+    ];
+
+    await _commitBatches(operations);
   }
 
   @override

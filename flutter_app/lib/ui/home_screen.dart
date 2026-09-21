@@ -488,20 +488,33 @@ class _HomeScreenState extends State<HomeScreen> {
       const SizedBox(height: 16),
       Row(
         children: [
-          Text(
-            '${words.length}개의 단어',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          if (wrongOnly) ...[
-            const SizedBox(width: 8),
-            const Text(
-              '3연속 정답 시 오답노트 졸업',
-              style: TextStyle(
-                color: LeafyTheme.muted,
-                fontSize: 11,
-              ),
+          Expanded(
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Text(
+                  '${words.length}개의 단어',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                if (wrongOnly)
+                  const Text(
+                    '3연속 정답 시 오답노트 졸업',
+                    style: TextStyle(
+                      color: LeafyTheme.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
             ),
-          ],
+          ),
+          if (wrongOnly && words.isNotEmpty)
+            TextButton.icon(
+              onPressed: c.busy ? null : _resetWrongNotebook,
+              icon: const Icon(Icons.restart_alt_rounded, size: 18),
+              label: const Text('초기화'),
+            ),
         ],
       ),
       const SizedBox(height: 8),
@@ -1126,18 +1139,123 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
   Future<void> _importCsv() async {
-    final words = await CsvTransfer().importWords();
-    var count = 0;
+    final proceed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('CSV 파일 가져오기'),
+            content: const SizedBox(
+              width: 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('아래 헤더 형식으로 CSV UTF-8 파일을 준비해주세요.'),
+                  SizedBox(height: 12),
+                  SelectableText(
+                    '카테고리,단어,뜻,예문,예문의 의미,메모',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  Text('필수: 단어, 뜻'),
+                  Text('선택: 카테고리, 예문, 예문의 의미, 메모'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('취소'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.upload_file_rounded),
+                label: const Text('CSV 파일 선택'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!proceed || !mounted) return;
 
     try {
-      for (final word in words) {
-        await c.save(word);
-        count++;
-      }
-    } finally {
-      if (!mounted || words.isEmpty) return;
+      final words = await CsvTransfer().importWords();
+      if (words.isEmpty || !mounted) return;
+
+      final imported = await c.importWords(words);
+      if (!mounted) return;
+
+      final skipped = words.length - imported;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${words.length}개 중 $count개 가져왔습니다.')),
+        SnackBar(
+          content: Text(
+            '$imported개 단어를 가져왔습니다.'
+            '${skipped > 0 ? ' $skipped개 중복 단어는 건너뛰었습니다.' : ''}',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$error')),
+      );
+    }
+  }
+
+  Future<void> _resetWrongNotebook() async {
+    final count = c.wrongIds.length;
+
+    if (count == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('초기화할 오답노트가 없습니다.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('오답노트 초기화'),
+            content: Text(
+              '현재 오답노트의 $count개 단어를 초기화할까요?\n\n'
+              '오답 기록만 삭제하고 단어, 카테고리, 정답 기록, '
+              '학습 레벨과 다음 복습일은 유지합니다.\n\n'
+              '이 작업은 되돌릴 수 없습니다.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('취소'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('초기화'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed || !mounted) return;
+
+    try {
+      final resetCount = await c.resetWrongNotebook();
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('오답노트 $resetCount개 단어를 초기화했습니다.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$error')),
       );
     }
   }

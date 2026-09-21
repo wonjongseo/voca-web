@@ -14,6 +14,8 @@ import '../domain/quiz_logic.dart';
 import '../domain/vocabulary.dart';
 
 // FLUTTER_WEB_PARITY_MODERN_UI_V2
+// FLUTTER_335_WEB_PARITY_V3
+// FLUTTER_335_BUILD_FIX_V4
 class LeafyController extends ChangeNotifier {
   LeafyController(
     this.preferences, {
@@ -75,8 +77,8 @@ class LeafyController extends ChangeNotifier {
     String uid,
     String? group,
     Notebook notebook,
-  ) {
-    return preferences.setString(
+  ) async {
+    await preferences.setString(
       _cacheKey(uid, group),
       jsonEncode(notebook.toJson()),
     );
@@ -160,7 +162,7 @@ class LeafyController extends ChangeNotifier {
     final pool = byId.values.toList();
     if (pool.isEmpty) return [];
 
-    final limit = requestedLimit.clamp(0, pool.length);
+    final limit = requestedLimit.clamp(0, pool.length).toInt();
     if (limit == 0) return [];
 
     if (wrongOnly) {
@@ -219,7 +221,7 @@ class LeafyController extends ChangeNotifier {
     if (auth == null) {
       user = null;
       _authUid = null;
-      await selectScope();
+      await selectScope(null);
       return;
     }
 
@@ -229,7 +231,7 @@ class LeafyController extends ChangeNotifier {
     if (user != null && preferences.getBool(_guestDirtyKey) == true) {
       await _mergeGuestIntoPersonalCloud();
     } else {
-      await selectScope();
+      await selectScope(null);
     }
 
     _authSubscription = auth!.authStateChanges().listen((next) {
@@ -244,13 +246,13 @@ class LeafyController extends ChangeNotifier {
           preferences.getBool(_guestDirtyKey) == true) {
         unawaited(_mergeGuestIntoPersonalCloud());
       } else {
-        unawaited(selectScope());
+        unawaited(selectScope(null));
       }
     });
   }
 
   Future<void> selectScope(
-    [String? group], {
+    String? group, {
     bool forceRemote = false,
   }) async {
     final generation = ++_generation;
@@ -317,7 +319,7 @@ class LeafyController extends ChangeNotifier {
     final currentUser = user;
 
     if (currentUser == null || firestore == null) {
-      await selectScope();
+      await selectScope(null);
       return;
     }
 
@@ -407,8 +409,79 @@ class LeafyController extends ChangeNotifier {
         (repository) => repository.deleteWord(id),
         () => book.replace(
           words: book.words.where((word) => word.id != id).toList(),
+          reviews: book.reviews
+              .where((review) => review['wordId'] != id)
+              .toList(),
         ),
       );
+
+  Future<int> importWords(List<VocabWord> incoming) async {
+    if (incoming.isEmpty) return 0;
+
+    final seen = book.words
+        .map((word) => word.word.trim().toLowerCase())
+        .where((word) => word.isNotEmpty)
+        .toSet();
+
+    final additions = <VocabWord>[];
+
+    for (final word in incoming) {
+      final key = word.word.trim().toLowerCase();
+      if (key.isEmpty || seen.contains(key)) continue;
+
+      seen.add(key);
+      additions.add(word);
+    }
+
+    if (additions.isEmpty) return 0;
+
+    final nextCategories = <String>{
+      ...book.categories,
+      ...additions
+          .map((word) => word.category)
+          .where((category) => category.isNotEmpty),
+    }.toList()
+      ..sort();
+
+    await _mutate(
+      (repository) async {
+        await repository.putWords(additions);
+        await repository.setCategories(nextCategories);
+      },
+      () => book.replace(
+        words: [
+          ...additions,
+          ...book.words,
+        ],
+        categories: nextCategories,
+      ),
+    );
+
+    return additions.length;
+  }
+
+  Future<int> resetWrongNotebook() async {
+    final activeIds = wrongIds;
+    if (activeIds.isEmpty) return 0;
+
+    final nextReviews = book.reviews
+        .where(
+          (review) =>
+              review['correct'] == true ||
+              !activeIds.contains(review['wordId']),
+        )
+        .toList();
+
+    await _mutate(
+      (repository) => repository.replaceReviewEvents(
+        activeIds,
+        nextReviews,
+      ),
+      () => book.replace(reviews: nextReviews),
+    );
+
+    return activeIds.length;
+  }
 
   Future<void> grade(VocabWord word, bool correct) {
     final now = DateTime.now();
