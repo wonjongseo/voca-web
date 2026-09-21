@@ -413,192 +413,6 @@ function looksLikeExcelV8(
   );
 }
 
-// WEB_EXCEL_IMPORT_V9
-type ExcelColumnV9 =
-  |'category'
-  |'word'
-  |'meaning'
-  |'example'
-  |'translation'
-  |'memo';
-
-const EXCEL_HEADERS_V9:Record<string,ExcelColumnV9>={
-  '카테고리':'category',
-  'category':'category',
-
-  '단어':'word',
-  'word':'word',
-
-  '뜻':'meaning',
-  '의미':'meaning',
-  'meaning':'meaning',
-
-  '예문':'example',
-  'example':'example',
-
-  '예문의의미':'translation',
-  '예문의뜻':'translation',
-  '예문뜻':'translation',
-  '예문해석':'translation',
-  'translation':'translation',
-
-  '메모':'memo',
-  'memo':'memo',
-};
-
-function normalizeExcelHeaderV9(value:unknown){
-  return String(value??'')
-    .replace(/^\uFEFF/,'')
-    .normalize('NFKC')
-    .trim()
-    .toLocaleLowerCase('ko-KR')
-    .replace(/[\s_\-./()[\]]+/g,'');
-}
-
-function excelCellV9(value:unknown){
-  if(value===null||value===undefined)return '';
-
-  return String(value)
-    .replace(/\r\n/g,'\n')
-    .replace(/\r/g,'\n')
-    .trim();
-}
-
-function findExcelHeaderV9(rows:unknown[][]){
-  const limit=Math.min(rows.length,30);
-
-  for(let rowIndex=0;rowIndex<limit;rowIndex++){
-    const row=rows[rowIndex]??[];
-    const columns=new Map<ExcelColumnV9,number>();
-
-    row.forEach((cell,columnIndex)=>{
-      const key=normalizeExcelHeaderV9(cell);
-      const mapped=EXCEL_HEADERS_V9[key];
-
-      if(mapped&&!columns.has(mapped)){
-        columns.set(mapped,columnIndex);
-      }
-    });
-
-    if(columns.has('word')&&columns.has('meaning')){
-      return {rowIndex,columns};
-    }
-  }
-
-  return null;
-}
-
-function parseExcelVocabularyV9(buffer:ArrayBuffer){
-  const workbook=XLSX.read(buffer,{
-    type:'array',
-    cellDates:false,
-  });
-
-  for(const sheetName of workbook.SheetNames){
-    const sheet=workbook.Sheets[sheetName];
-    if(!sheet)continue;
-
-    const rows=XLSX.utils.sheet_to_json(sheet,{
-      header:1,
-      raw:false,
-      defval:'',
-      blankrows:false,
-    }) as unknown[][];
-
-    const header=findExcelHeaderV9(rows);
-    if(!header)continue;
-
-    const readCell=(row:unknown[],column:ExcelColumnV9)=>{
-      const index=header.columns.get(column);
-      return index===undefined?'':excelCellV9(row[index]);
-    };
-
-    const words:Word[]=[];
-    let skipped=0;
-
-    for(
-      let rowIndex=header.rowIndex+1;
-      rowIndex<rows.length;
-      rowIndex++
-    ){
-      const row=rows[rowIndex]??[];
-
-      if(!row.some(cell=>excelCellV9(cell))){
-        continue;
-      }
-
-      const wordText=readCell(row,'word');
-      const meaning=readCell(row,'meaning');
-
-      if(!wordText||!meaning){
-        skipped++;
-        continue;
-      }
-
-      const category=readCell(row,'category');
-      const example=readCell(row,'example');
-      const translation=readCell(row,'translation');
-      const memo=readCell(row,'memo');
-
-      const word=blankWord();
-
-      word.category=category;
-      word.word=wordText;
-      word.meaning=meaning;
-      word.example=example;
-      word.translation=translation;
-      word.memo=memo;
-
-      // 기존 앱의 다중 의미/예문 구조와도 호환
-      word.meaningEntries=[meaning];
-
-      if(example||translation){
-        word.examples=[{
-          text:example,
-          translation,
-        }];
-      }
-
-      words.push(word);
-    }
-
-    if(!words.length){
-      throw new Error(
-        `‘${sheetName}’ 시트에서 가져올 단어를 찾지 못했습니다.`
-      );
-    }
-
-    return {
-      words,
-      skipped,
-      sheetName,
-    };
-  }
-
-  throw new Error(
-    'Excel에서 필요한 헤더를 찾지 못했습니다. '+
-    '첫 행을 카테고리 / 단어 / 뜻 / 예문 / 예문의 의미 / 메모 형식으로 만들어주세요.'
-  );
-}
-
-function looksLikeExcelV9(file:File,buffer:ArrayBuffer){
-  const name=file.name.toLowerCase();
-  const type=file.type.toLowerCase();
-  const bytes=new Uint8Array(buffer);
-
-  const zipSignature=
-    bytes.length>=2 &&
-    bytes[0]===0x50 &&
-    bytes[1]===0x4b;
-
-  return (
-    name.endsWith('.xlsx') ||
-    name.endsWith('.xlsm') ||
-    type.includes('spreadsheetml') ||
-    zipSignature
-  );
-}
-
 type Mode = 'flash'|'choice'|'typing'|'meaningTyping'|'context';
 type QuizChoice = string|{meaning:string;word:string;example:string;translation?:string};
 type Session = {mode: Mode; words: Word[]; meanings: string[]; index: number; correct: number; incorrectIds?: string[]; choices: QuizChoice[][]};
@@ -1976,9 +1790,8 @@ export default function Home() {
 
       const buffer=await file.arrayBuffer();
 
-      // XLSX는 절대로 file.text()/parseCSV()로 보내지 않음
-      if(looksLikeExcelV9(file,buffer)){
-        const imported=parseExcelVocabularyV9(buffer);
+      if(looksLikeExcelV8(file,buffer)){
+        const imported=parseExcelVocabularyV8(buffer);
 
         setPendingImport({
           words:imported.words,
@@ -2002,7 +1815,9 @@ export default function Home() {
           new Uint8Array(buffer)
         );
 
-        setPendingImport(parseCSV(text));
+        setPendingImport(
+          parseCSV(text)
+        );
         return;
       }
 
@@ -2865,10 +2680,12 @@ export default function Home() {
   <p className="eyebrow">FILE IMPORT</p>
   <h2 id="modal-title">단어 가져오기</h2>
 
-  <p>{pendingImport.words.length}개 단어를 찾았습니다.</p>
+  <p>
+    {pendingImport.words.length}개 단어를 찾았습니다.
+  </p>
 
   <p className="muted">
-    중복 단어와 단어·뜻이 비어 있는 행은 건너뜁니다.
+    중복 단어와 단어·의미가 비어 있는 행은 건너뜁니다.
     기존 단어는 유지됩니다.
   </p>
 
@@ -2880,7 +2697,7 @@ export default function Home() {
         onChange={e=>setImportCategory(e.target.value)}
       >
         <option value="__file__">
-          Excel의 카테고리 사용
+          파일의 카테고리 사용
         </option>
 
         <option value="__none__">
@@ -2908,7 +2725,7 @@ export default function Home() {
         <input
           autoFocus
           maxLength={60}
-          placeholder="예: TOEIC 700"
+          placeholder="예: 노랭이 전면개정판"
           value={importNewCategory}
           onChange={e=>
             setImportNewCategory(e.target.value)
