@@ -312,17 +312,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 980),
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(18, 12, 18, 104),
-                      children: [
-                        _header(),
-                        const SizedBox(height: 18),
-                        if (tab == 0) ..._words(categories, wrongOnly: false),
-                        if (tab == 1) ..._study(categories),
-                        if (tab == 2) ..._words(categories, wrongOnly: true),
-                        if (tab == 3) ..._statistics(),
-                        if (tab == 4) ..._settings(),
-                      ],
+                    child: RefreshIndicator(
+                      onRefresh: c.refreshScope,
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 104),
+                        children: [
+                          _header(),
+                          const SizedBox(height: 18),
+                          if (tab == 0) ..._words(categories, wrongOnly: false),
+                          if (tab == 1) ..._study(categories),
+                          if (tab == 2) ..._words(categories, wrongOnly: true),
+                          if (tab == 3) ..._statistics(),
+                          if (tab == 4) ..._settings(),
+                        ],
+                      ),
                     ),
                   ),
                 ),

@@ -427,6 +427,19 @@ function markCloudSession(scopeKey:string){
   catch {}
 }
 
+function clearCloudSessionCache(){
+  try {
+    const keys:string[]=[];
+    for(let index=0;index<sessionStorage.length;index++){
+      const key=sessionStorage.key(index);
+      if(key?.startsWith(`${CLOUD_SESSION_PREFIX}:`)){
+        keys.push(key);
+      }
+    }
+    for(const key of keys)sessionStorage.removeItem(key);
+  } catch {}
+}
+
 function cloudPendingKey(uid:string,scope:CloudScope){
   const scopeKey=scope.type==='personal'?'personal':`group:${scope.groupId}`;
   return `${CLOUD_PENDING_PREFIX}:${uid}:${scopeKey}`;
@@ -703,6 +716,7 @@ export default function Home() {
 
     if(!user){
       cloudShadowRef.current.clear();
+      clearCloudSessionCache();
 
       try {
         const raw=localStorage.getItem(STORAGE_KEY);
@@ -946,6 +960,9 @@ export default function Home() {
     if(!authEmail.trim()||!authPassword){setNotice('이메일과 비밀번호를 입력해주세요.');return;}
     setCloudBusy(true);
     try {
+      // 다른 기기에서 추가/수정된 데이터를 놓치지 않도록
+      // 재로그인 시 이전 탭 세션 캐시를 사용하지 않는다.
+      clearCloudSessionCache();
       await signInEmail(authEmail.trim(),authPassword,createAccount);
       setAuthPassword('');
       setNotice(createAccount?'계정을 만들고 로그인했습니다.':'로그인했습니다.');
@@ -958,6 +975,9 @@ export default function Home() {
   async function handleGoogleAuth() {
     setCloudBusy(true);
     try {
+      // 다른 기기에서 추가/수정된 데이터를 놓치지 않도록
+      // 재로그인 시 이전 탭 세션 캐시를 사용하지 않는다.
+      clearCloudSessionCache();
       await signInGoogle();
       setNotice('Google 계정으로 로그인했습니다.');
     } catch(err) {
