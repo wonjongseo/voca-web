@@ -177,17 +177,12 @@ class CloudRepository implements NotebookRepository {
     VocabWord word, {
     Object? reviewEvents,
   }) {
-    final data = <String, dynamic>{
+    return <String, dynamic>{
       ...word.toJson(),
+      if (reviewEvents != null) '_reviewEvents': reviewEvents,
       'updatedAt': FieldValue.serverTimestamp(),
       'updatedBy': uid,
     };
-
-    if (reviewEvents != null) {
-      data['_reviewEvents'] = reviewEvents;
-    }
-
-    return data;
   }
 
   VocabWord _wordFromDoc(

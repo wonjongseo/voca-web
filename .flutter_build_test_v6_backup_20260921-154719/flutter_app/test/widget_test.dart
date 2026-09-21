@@ -20,11 +20,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'leaf');
     await tester.enterText(find.byType(TextFormField).at(1), '잎');
-
-    final saveButton = find.text('저장');
-    await tester.ensureVisible(saveButton);
-    await tester.pumpAndSettle();
-    await tester.tap(saveButton);
+    await tester.tap(find.text('저장'));
     await tester.pumpAndSettle();
     expect(find.text('leaf'), findsOneWidget);
     expect(c.book.words.single.meaning, '잎');

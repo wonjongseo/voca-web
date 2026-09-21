@@ -35,10 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int quizSize = 10;
   bool quizActive = false;
 
-  // WEB_PARITY_BOTTOM_ONLY_PAGINATION_V5
-  static const int wordPageSize = 24;
-  int wordPage = 1;
-
   final speech = Pronunciation();
 
   LeafyController get c => widget.controller;
@@ -446,26 +442,13 @@ class _HomeScreenState extends State<HomeScreen> {
             .compareTo((a.data['created'] as num?) ?? 0),
       );
 
-    // 웹과 동일하게 24개씩 표시하고 페이지 이동 UI는 하단에만 둔다.
-    final pageCount =
-        words.isEmpty ? 1 : (words.length + wordPageSize - 1) ~/ wordPageSize;
-    final effectivePage = wordPage.clamp(1, pageCount).toInt();
-    final pageStart = (effectivePage - 1) * wordPageSize;
-    final pagedWords = words
-        .skip(pageStart)
-        .take(wordPageSize)
-        .toList();
-
     return [
       TextField(
         decoration: const InputDecoration(
           prefixIcon: Icon(Icons.search_rounded),
           hintText: '단어, 뜻, 메모, 유의어 검색',
         ),
-        onChanged: (value) => setState(() {
-          search = value;
-          wordPage = 1;
-        }),
+        onChanged: (value) => setState(() => search = value),
       ),
       const SizedBox(height: 12),
       SizedBox(
@@ -479,10 +462,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: FilterChip(
                   label: Text(value),
                   selected: filter == value,
-                  onSelected: (_) => setState(() {
-                    filter = value;
-                    wordPage = 1;
-                  }),
+                  onSelected: (_) => setState(() => filter = value),
                 ),
               ),
           ],
@@ -490,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const SizedBox(height: 10),
       DropdownButtonFormField<String>(
-        initialValue: categories.contains(category) ? category : '전체',
+        value: categories.contains(category) ? category : '전체',
         decoration: const InputDecoration(
           prefixIcon: Icon(Icons.folder_open_outlined),
           labelText: '카테고리',
@@ -503,10 +483,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
             .toList(),
-        onChanged: (value) => setState(() {
-          category = value ?? '전체';
-          wordPage = 1;
-        }),
+        onChanged: (value) => setState(() => category = value ?? '전체'),
       ),
       const SizedBox(height: 16),
       Row(
@@ -550,40 +527,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ? Icons.check_circle_outline_rounded
               : Icons.menu_book_outlined,
         ),
-      for (final word in pagedWords)
-        _wordCard(word, wrongOnly: wrongOnly),
-      if (words.isNotEmpty && pageCount > 1) ...[
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(
-              tooltip: '이전 페이지',
-              onPressed: effectivePage <= 1
-                  ? null
-                  : () => setState(() => wordPage = effectivePage - 1),
-              icon: const Icon(Icons.chevron_left_rounded),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                '$effectivePage / $pageCount',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: LeafyTheme.muted,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: '다음 페이지',
-              onPressed: effectivePage >= pageCount
-                  ? null
-                  : () => setState(() => wordPage = effectivePage + 1),
-              icon: const Icon(Icons.chevron_right_rounded),
-            ),
-          ],
-        ),
-      ],
+      for (final word in words) _wordCard(word, wrongOnly: wrongOnly),
     ];
   }
 
@@ -805,7 +749,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 10),
         DropdownButtonFormField<String>(
-          initialValue: [
+          value: [
             '오늘 복습',
             '전체',
             '즐겨찾기',
@@ -842,7 +786,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 10),
         DropdownButtonFormField<int>(
-          initialValue: quizSize,
+          value: quizSize,
           decoration: const InputDecoration(labelText: '문제 수'),
           items: [5, 10, 20, 30, 99999]
               .map(
@@ -1051,7 +995,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ListTile(
                 title: const Text('내 단어장으로 전환'),
                 leading: const Icon(Icons.person_outline_rounded),
-                onTap: c.busy ? null : () => c.selectScope(null),
+                onTap: c.busy ? null : () => c.selectScope(),
               ),
               ListTile(
                 title: const Text('새 그룹 만들기'),
@@ -1105,7 +1049,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
               child: DropdownButtonFormField<String>(
-                initialValue: c.accent,
+                value: c.accent,
                 decoration: const InputDecoration(labelText: '영어 발음'),
                 items: const [
                   DropdownMenuItem(value: 'en-US', child: Text('미국 영어')),
