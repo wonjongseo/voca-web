@@ -53,35 +53,26 @@ const aliases: Record<string,string> = {
   '영어단어':'word',
   '단어':'word',
   'word':'word',
-
+  'english':'word',
   '의미':'meaning',
   '뜻':'meaning',
   'meaning':'meaning',
-
   '예시':'example',
   '예문':'example',
   'example':'example',
-
   '예시 뜻':'translation',
   '예문 뜻':'translation',
-  '예문의 의미':'translation',
-  '예문의 뜻':'translation',
-  '예문해석':'translation',
-  '번역':'translation',
   'translation':'translation',
-
   '유의어':'synonyms',
   '동의어':'synonyms',
+  'synonym':'synonyms',
   'synonyms':'synonyms',
-
   '메모':'memo',
   'memo':'memo',
-
   '카테고리':'category',
   '분류':'category',
   'category':'category',
   'day':'category',
-
   '즐겨찾기':'favorite',
   'favorite':'favorite',
 };

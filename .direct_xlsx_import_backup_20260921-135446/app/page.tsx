@@ -11,104 +11,30 @@ import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, syncCloudData
 import type {User} from 'firebase/auth';
 import * as XLSX from 'xlsx';
 
-// WEB_DIRECT_XLSX_IMPORT_V5
-type ImportColumn =
-  |'category'
-  |'word'
-  |'meaning'
-  |'example'
-  |'translation'
-  |'memo';
+// WEB_IMPORT_AND_PAGINATION_V4
+const IMPORT_WORD_HEADERS=new Set(['word','영단어','영어단어','단어']);
+const IMPORT_MEANING_HEADERS=new Set(['meaning','의미','뜻']);
 
-const XLSX_HEADER_ALIASES:Record<string,ImportColumn>={
-  '카테고리':'category',
-  '분류':'category',
-  'category':'category',
-  'day':'category',
-
-  '단어':'word',
-  '영단어':'word',
-  '영어단어':'word',
-  'word':'word',
-  'english':'word',
-
-  '뜻':'meaning',
-  '의미':'meaning',
-  'meaning':'meaning',
-
-  '예문':'example',
-  '예시':'example',
-  'example':'example',
-
-  '예문의의미':'translation',
-  '예문의뜻':'translation',
-  '예문뜻':'translation',
-  '예시뜻':'translation',
-  '예문해석':'translation',
-  '번역':'translation',
-  'translation':'translation',
-
-  '메모':'memo',
-  'memo':'memo',
-  'note':'memo',
-};
-
-function normalizeXlsxHeader(value:unknown){
+function normalizeImportHeader(value:unknown){
   return String(value??'')
     .replace(/^\uFEFF/,'')
-    .normalize('NFKC')
     .trim()
     .toLocaleLowerCase('ko-KR')
-    .replace(/[\s_\-./()[\]]+/g,'');
+    .replace(/\s+/g,'');
 }
 
-function xlsxCellText(value:unknown){
-  if(value===null||value===undefined)return '';
-
-  return String(value)
-    .replace(/\r\n/g,'\n')
-    .replace(/\r/g,'\n')
-    .trim();
-}
-
-function findXlsxHeader(rows:unknown[][]){
-  const limit=Math.min(rows.length,30);
-
-  for(let rowIndex=0;rowIndex<limit;rowIndex++){
-    const row=rows[rowIndex]??[];
-    const columns=new Map<ImportColumn,number>();
-
-    row.forEach((cell,columnIndex)=>{
-      const key=normalizeXlsxHeader(cell);
-      const mapped=XLSX_HEADER_ALIASES[key];
-
-      if(mapped&&!columns.has(mapped)){
-        columns.set(mapped,columnIndex);
-      }
-    });
-
-    if(
-      columns.has('word') &&
-      columns.has('meaning')
-    ){
-      return {
-        rowIndex,
-        columns,
-      };
-    }
-  }
-
-  return null;
+function sheetHasVocabularyHeader(rows:unknown[][]){
+  return rows.slice(0,30).some(row=>{
+    const headers=row.map(normalizeImportHeader);
+    return (
+      headers.some(header=>IMPORT_WORD_HEADERS.has(header)) &&
+      headers.some(header=>IMPORT_MEANING_HEADERS.has(header))
+    );
+  });
 }
 
 function parseXlsxVocabulary(buffer:ArrayBuffer){
-  const workbook=XLSX.read(
-    buffer,
-    {
-      type:'array',
-      cellDates:false,
-    },
-  );
+  const workbook=XLSX.read(buffer,{type:'array'});
 
   for(const sheetName of workbook.SheetNames){
     const sheet=workbook.Sheets[sheetName];
@@ -119,91 +45,26 @@ function parseXlsxVocabulary(buffer:ArrayBuffer){
       {
         header:1,
         raw:false,
-        defval:'',
         blankrows:false,
       },
     ) as unknown[][];
 
-    const header=findXlsxHeader(rows);
-    if(!header)continue;
-
-    const readCell=(
-      row:unknown[],
-      column:ImportColumn,
-    )=>{
-      const index=header.columns.get(column);
-
-      return index===undefined
-        ?''
-        :xlsxCellText(row[index]);
-    };
-
-    let skipped=0;
-    const words:Word[]=[];
-
-    for(
-      let rowIndex=header.rowIndex+1;
-      rowIndex<rows.length;
-      rowIndex++
-    ){
-      const row=rows[rowIndex]??[];
-
-      if(!row.some(cell=>xlsxCellText(cell))){
-        continue;
-      }
-
-      const wordText=readCell(row,'word');
-      const meaning=readCell(row,'meaning');
-
-      if(!wordText||!meaning){
-        skipped++;
-        continue;
-      }
-
-      const example=readCell(row,'example');
-      const translation=readCell(row,'translation');
-      const category=readCell(row,'category');
-      const memo=readCell(row,'memo');
-
-      const word=blankWord();
-
-      word.word=wordText;
-      word.meaning=meaning;
-      word.category=category;
-      word.example=example;
-      word.translation=translation;
-      word.memo=memo;
-
-      word.meaningEntries=[meaning];
-
-      if(example||translation){
-        word.examples=[
-          {
-            text:example,
-            translation,
-          },
-        ];
-      }
-
-      words.push(word);
-    }
-
-    if(!words.length){
-      throw new Error(
-        `‘${sheetName}’ 시트에서 가져올 단어를 찾지 못했습니다.`
-      );
-    }
+    if(!sheetHasVocabularyHeader(rows))continue;
 
     return {
-      words,
-      skipped,
+      ...parseCSV(
+        XLSX.utils.sheet_to_csv(
+          sheet,
+          {blankrows:false},
+        ),
+      ),
       sheetName,
     };
   }
 
   throw new Error(
     'Excel에서 단어/뜻 열을 찾지 못했습니다. '+
-    '지원 형식: 카테고리 / 단어 / 뜻 / 예문 / 예문의 의미 / 메모'
+    '지원 헤더: word/meaning 또는 단어/뜻'
   );
 }
 
