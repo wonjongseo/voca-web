@@ -9,6 +9,595 @@ import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from '.
 import {pronunciationSources} from './lib/pronunciation';
 import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, syncCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
 import type {User} from 'firebase/auth';
+import * as XLSX from 'xlsx';
+
+// WEB_DIRECT_XLSX_IMPORT_V5
+type ImportColumn =
+  |'category'
+  |'word'
+  |'meaning'
+  |'example'
+  |'translation'
+  |'memo';
+
+const XLSX_HEADER_ALIASES:Record<string,ImportColumn>={
+  '카테고리':'category',
+  '분류':'category',
+  'category':'category',
+  'day':'category',
+
+  '단어':'word',
+  '영단어':'word',
+  '영어단어':'word',
+  'word':'word',
+  'english':'word',
+
+  '뜻':'meaning',
+  '의미':'meaning',
+  'meaning':'meaning',
+
+  '예문':'example',
+  '예시':'example',
+  'example':'example',
+
+  '예문의의미':'translation',
+  '예문의뜻':'translation',
+  '예문뜻':'translation',
+  '예시뜻':'translation',
+  '예문해석':'translation',
+  '번역':'translation',
+  'translation':'translation',
+
+  '메모':'memo',
+  'memo':'memo',
+  'note':'memo',
+};
+
+function normalizeXlsxHeader(value:unknown){
+  return String(value??'')
+    .replace(/^\uFEFF/,'')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('ko-KR')
+    .replace(/[\s_\-./()[\]]+/g,'');
+}
+
+function xlsxCellText(value:unknown){
+  if(value===null||value===undefined)return '';
+
+  return String(value)
+    .replace(/\r\n/g,'\n')
+    .replace(/\r/g,'\n')
+    .trim();
+}
+
+function findXlsxHeader(rows:unknown[][]){
+  const limit=Math.min(rows.length,30);
+
+  for(let rowIndex=0;rowIndex<limit;rowIndex++){
+    const row=rows[rowIndex]??[];
+    const columns=new Map<ImportColumn,number>();
+
+    row.forEach((cell,columnIndex)=>{
+      const key=normalizeXlsxHeader(cell);
+      const mapped=XLSX_HEADER_ALIASES[key];
+
+      if(mapped&&!columns.has(mapped)){
+        columns.set(mapped,columnIndex);
+      }
+    });
+
+    if(
+      columns.has('word') &&
+      columns.has('meaning')
+    ){
+      return {
+        rowIndex,
+        columns,
+      };
+    }
+  }
+
+  return null;
+}
+
+function parseXlsxVocabulary(buffer:ArrayBuffer){
+  const workbook=XLSX.read(
+    buffer,
+    {
+      type:'array',
+      cellDates:false,
+    },
+  );
+
+  for(const sheetName of workbook.SheetNames){
+    const sheet=workbook.Sheets[sheetName];
+    if(!sheet)continue;
+
+    const rows=XLSX.utils.sheet_to_json(
+      sheet,
+      {
+        header:1,
+        raw:false,
+        defval:'',
+        blankrows:false,
+      },
+    ) as unknown[][];
+
+    const header=findXlsxHeader(rows);
+    if(!header)continue;
+
+    const readCell=(
+      row:unknown[],
+      column:ImportColumn,
+    )=>{
+      const index=header.columns.get(column);
+
+      return index===undefined
+        ?''
+        :xlsxCellText(row[index]);
+    };
+
+    let skipped=0;
+    const words:Word[]=[];
+
+    for(
+      let rowIndex=header.rowIndex+1;
+      rowIndex<rows.length;
+      rowIndex++
+    ){
+      const row=rows[rowIndex]??[];
+
+      if(!row.some(cell=>xlsxCellText(cell))){
+        continue;
+      }
+
+      const wordText=readCell(row,'word');
+      const meaning=readCell(row,'meaning');
+
+      if(!wordText||!meaning){
+        skipped++;
+        continue;
+      }
+
+      const example=readCell(row,'example');
+      const translation=readCell(row,'translation');
+      const category=readCell(row,'category');
+      const memo=readCell(row,'memo');
+
+      const word=blankWord();
+
+      word.word=wordText;
+      word.meaning=meaning;
+      word.category=category;
+      word.example=example;
+      word.translation=translation;
+      word.memo=memo;
+
+      word.meaningEntries=[meaning];
+
+      if(example||translation){
+        word.examples=[
+          {
+            text:example,
+            translation,
+          },
+        ];
+      }
+
+      words.push(word);
+    }
+
+    if(!words.length){
+      throw new Error(
+        `‘${sheetName}’ 시트에서 가져올 단어를 찾지 못했습니다.`
+      );
+    }
+
+    return {
+      words,
+      skipped,
+      sheetName,
+    };
+  }
+
+  throw new Error(
+    'Excel에서 단어/뜻 열을 찾지 못했습니다. '+
+    '지원 형식: 카테고리 / 단어 / 뜻 / 예문 / 예문의 의미 / 메모'
+  );
+}
+
+// WEB_IMPORT_ROBUST_V8
+type ExcelImportColumnV8 =
+  |'category'
+  |'word'
+  |'meaning'
+  |'example'
+  |'translation'
+  |'memo';
+
+const EXCEL_IMPORT_HEADERS_V8:Record<string,ExcelImportColumnV8>={
+  '카테고리':'category',
+  '분류':'category',
+  'category':'category',
+  'day':'category',
+
+  '단어':'word',
+  '영단어':'word',
+  '영어단어':'word',
+  'word':'word',
+  'english':'word',
+
+  '뜻':'meaning',
+  '의미':'meaning',
+  'meaning':'meaning',
+
+  '예문':'example',
+  '예시':'example',
+  'example':'example',
+
+  '예문의의미':'translation',
+  '예문의뜻':'translation',
+  '예문뜻':'translation',
+  '예시뜻':'translation',
+  '예문해석':'translation',
+  '번역':'translation',
+  'translation':'translation',
+
+  '메모':'memo',
+  'memo':'memo',
+  'note':'memo',
+};
+
+function normalizeExcelHeaderV8(value:unknown){
+  return String(value??'')
+    .replace(/^\uFEFF/,'')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('ko-KR')
+    .replace(/[\s_\-./()[\]]+/g,'');
+}
+
+function excelCellTextV8(value:unknown){
+  if(value===null||value===undefined)return '';
+
+  return String(value)
+    .replace(/\r\n/g,'\n')
+    .replace(/\r/g,'\n')
+    .trim();
+}
+
+function findExcelHeaderV8(rows:unknown[][]){
+  const limit=Math.min(rows.length,30);
+
+  for(let rowIndex=0;rowIndex<limit;rowIndex++){
+    const row=rows[rowIndex]??[];
+    const columns=new Map<ExcelImportColumnV8,number>();
+
+    row.forEach((cell,columnIndex)=>{
+      const key=normalizeExcelHeaderV8(cell);
+      const mapped=EXCEL_IMPORT_HEADERS_V8[key];
+
+      if(mapped&&!columns.has(mapped)){
+        columns.set(mapped,columnIndex);
+      }
+    });
+
+    if(
+      columns.has('word') &&
+      columns.has('meaning')
+    ){
+      return {rowIndex,columns};
+    }
+  }
+
+  return null;
+}
+
+function parseExcelVocabularyV8(buffer:ArrayBuffer){
+  const workbook=XLSX.read(buffer,{
+    type:'array',
+    cellDates:false,
+  });
+
+  for(const sheetName of workbook.SheetNames){
+    const sheet=workbook.Sheets[sheetName];
+    if(!sheet)continue;
+
+    const rows=XLSX.utils.sheet_to_json(sheet,{
+      header:1,
+      raw:false,
+      defval:'',
+      blankrows:false,
+    }) as unknown[][];
+
+    const header=findExcelHeaderV8(rows);
+    if(!header)continue;
+
+    const readCell=(
+      row:unknown[],
+      column:ExcelImportColumnV8,
+    )=>{
+      const index=header.columns.get(column);
+
+      return index===undefined
+        ?''
+        :excelCellTextV8(row[index]);
+    };
+
+    const words:Word[]=[];
+    let skipped=0;
+
+    for(
+      let rowIndex=header.rowIndex+1;
+      rowIndex<rows.length;
+      rowIndex++
+    ){
+      const row=rows[rowIndex]??[];
+
+      if(!row.some(cell=>excelCellTextV8(cell))){
+        continue;
+      }
+
+      const wordText=readCell(row,'word');
+      const meaning=readCell(row,'meaning');
+
+      if(!wordText||!meaning){
+        skipped++;
+        continue;
+      }
+
+      const category=readCell(row,'category');
+      const example=readCell(row,'example');
+      const translation=readCell(row,'translation');
+      const memo=readCell(row,'memo');
+
+      const word=blankWord();
+
+      word.category=category;
+      word.word=wordText;
+      word.meaning=meaning;
+      word.example=example;
+      word.translation=translation;
+      word.memo=memo;
+
+      word.meaningEntries=[meaning];
+
+      if(example||translation){
+        word.examples=[{
+          text:example,
+          translation,
+        }];
+      }
+
+      words.push(word);
+    }
+
+    if(!words.length){
+      throw new Error(
+        `‘${sheetName}’ 시트에서 가져올 단어를 찾지 못했습니다.`
+      );
+    }
+
+    return {
+      words,
+      skipped,
+      sheetName,
+    };
+  }
+
+  throw new Error(
+    'Excel에서 단어/뜻 열을 찾지 못했습니다. '+
+    '지원 형식: 카테고리 / 단어 / 뜻 / 예문 / 예문의 의미 / 메모'
+  );
+}
+
+function looksLikeExcelV8(
+  file:File,
+  buffer:ArrayBuffer,
+){
+  const name=file.name.toLowerCase();
+  const type=file.type.toLowerCase();
+  const bytes=new Uint8Array(buffer);
+
+  const zipSignature=
+    bytes.length>=2 &&
+    bytes[0]===0x50 &&
+    bytes[1]===0x4b;
+
+  return (
+    name.endsWith('.xlsx') ||
+    name.endsWith('.xlsm') ||
+    type.includes('spreadsheetml') ||
+    zipSignature
+  );
+}
+
+// WEB_EXCEL_IMPORT_V9
+type ExcelColumnV9 =
+  |'category'
+  |'word'
+  |'meaning'
+  |'example'
+  |'translation'
+  |'memo';
+
+const EXCEL_HEADERS_V9:Record<string,ExcelColumnV9>={
+  '카테고리':'category',
+  'category':'category',
+
+  '단어':'word',
+  'word':'word',
+
+  '뜻':'meaning',
+  '의미':'meaning',
+  'meaning':'meaning',
+
+  '예문':'example',
+  'example':'example',
+
+  '예문의의미':'translation',
+  '예문의뜻':'translation',
+  '예문뜻':'translation',
+  '예문해석':'translation',
+  'translation':'translation',
+
+  '메모':'memo',
+  'memo':'memo',
+};
+
+function normalizeExcelHeaderV9(value:unknown){
+  return String(value??'')
+    .replace(/^\uFEFF/,'')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('ko-KR')
+    .replace(/[\s_\-./()[\]]+/g,'');
+}
+
+function excelCellV9(value:unknown){
+  if(value===null||value===undefined)return '';
+
+  return String(value)
+    .replace(/\r\n/g,'\n')
+    .replace(/\r/g,'\n')
+    .trim();
+}
+
+function findExcelHeaderV9(rows:unknown[][]){
+  const limit=Math.min(rows.length,30);
+
+  for(let rowIndex=0;rowIndex<limit;rowIndex++){
+    const row=rows[rowIndex]??[];
+    const columns=new Map<ExcelColumnV9,number>();
+
+    row.forEach((cell,columnIndex)=>{
+      const key=normalizeExcelHeaderV9(cell);
+      const mapped=EXCEL_HEADERS_V9[key];
+
+      if(mapped&&!columns.has(mapped)){
+        columns.set(mapped,columnIndex);
+      }
+    });
+
+    if(columns.has('word')&&columns.has('meaning')){
+      return {rowIndex,columns};
+    }
+  }
+
+  return null;
+}
+
+function parseExcelVocabularyV9(buffer:ArrayBuffer){
+  const workbook=XLSX.read(buffer,{
+    type:'array',
+    cellDates:false,
+  });
+
+  for(const sheetName of workbook.SheetNames){
+    const sheet=workbook.Sheets[sheetName];
+    if(!sheet)continue;
+
+    const rows=XLSX.utils.sheet_to_json(sheet,{
+      header:1,
+      raw:false,
+      defval:'',
+      blankrows:false,
+    }) as unknown[][];
+
+    const header=findExcelHeaderV9(rows);
+    if(!header)continue;
+
+    const readCell=(row:unknown[],column:ExcelColumnV9)=>{
+      const index=header.columns.get(column);
+      return index===undefined?'':excelCellV9(row[index]);
+    };
+
+    const words:Word[]=[];
+    let skipped=0;
+
+    for(
+      let rowIndex=header.rowIndex+1;
+      rowIndex<rows.length;
+      rowIndex++
+    ){
+      const row=rows[rowIndex]??[];
+
+      if(!row.some(cell=>excelCellV9(cell))){
+        continue;
+      }
+
+      const wordText=readCell(row,'word');
+      const meaning=readCell(row,'meaning');
+
+      if(!wordText||!meaning){
+        skipped++;
+        continue;
+      }
+
+      const category=readCell(row,'category');
+      const example=readCell(row,'example');
+      const translation=readCell(row,'translation');
+      const memo=readCell(row,'memo');
+
+      const word=blankWord();
+
+      word.category=category;
+      word.word=wordText;
+      word.meaning=meaning;
+      word.example=example;
+      word.translation=translation;
+      word.memo=memo;
+
+      // 기존 앱의 다중 의미/예문 구조와도 호환
+      word.meaningEntries=[meaning];
+
+      if(example||translation){
+        word.examples=[{
+          text:example,
+          translation,
+        }];
+      }
+
+      words.push(word);
+    }
+
+    if(!words.length){
+      throw new Error(
+        `‘${sheetName}’ 시트에서 가져올 단어를 찾지 못했습니다.`
+      );
+    }
+
+    return {
+      words,
+      skipped,
+      sheetName,
+    };
+  }
+
+  throw new Error(
+    'Excel에서 필요한 헤더를 찾지 못했습니다. '+
+    '첫 행을 카테고리 / 단어 / 뜻 / 예문 / 예문의 의미 / 메모 형식으로 만들어주세요.'
+  );
+}
+
+function looksLikeExcelV9(file:File,buffer:ArrayBuffer){
+  const name=file.name.toLowerCase();
+  const type=file.type.toLowerCase();
+  const bytes=new Uint8Array(buffer);
+
+  const zipSignature=
+    bytes.length>=2 &&
+    bytes[0]===0x50 &&
+    bytes[1]===0x4b;
+
+  return (
+    name.endsWith('.xlsx') ||
+    name.endsWith('.xlsm') ||
+    type.includes('spreadsheetml') ||
+    zipSignature
+  );
+}
 
 type Mode = 'flash'|'choice'|'typing'|'meaningTyping'|'context';
 type QuizChoice = string|{meaning:string;word:string;example:string;translation?:string};
@@ -638,8 +1227,6 @@ export default function Home() {
   const [deleteId,setDeleteId] = useState('');
   const [notice,setNotice] = useState('');
   const [pendingImport,setPendingImport] = useState<{words:Word[];skipped:number}|null>(null);
-  const [csvImportGuide,setCsvImportGuide] = useState(false);
-  // CSV_ONLY_IMPORT_AND_PAGINATION_CLEANUP_V11
   const [importCategory,setImportCategory] = useState('__file__');
   const [importNewCategory,setImportNewCategory] = useState('');
   const [categoryManager,setCategoryManager] = useState(false);
@@ -825,7 +1412,7 @@ export default function Home() {
     catch {setNotice('자동 듣기 설정은 현재 화면에서만 유지됩니다.');}
   }
   useEffect(()=>{if(!notice)return; const id=setTimeout(()=>setNotice(''),5500);return ()=>clearTimeout(id);},[notice]);
-  const modalOpen=!!(editor||detail||deleteId||pendingImport||categoryManager||csvImportGuide);
+  const modalOpen=!!(editor||detail||deleteId||pendingImport||categoryManager);
   useEffect(()=>{if(modalOpen)modalRef.current?.showModal();else modalRef.current?.close();},[modalOpen]);
   useEffect(()=>{
     if(!editor)return;
@@ -1079,6 +1666,112 @@ export default function Home() {
   useEffect(()=>{
     setWordListPage(current=>Math.min(current,wordListTotalPages));
   },[wordListTotalPages]);
+  function goToWordListPageV8(target:number){
+    const next=Math.max(
+      1,
+      Math.min(wordListTotalPages,target)
+    );
+
+    setWordListPage(next);
+  }
+
+  function renderWordPaginationV8(){
+    if(filtered.length<=WORDS_PER_PAGE){
+      return null;
+    }
+
+    const visibleCount=Math.min(
+      5,
+      wordListTotalPages
+    );
+
+    const maxStart=Math.max(
+      1,
+      wordListTotalPages-visibleCount+1
+    );
+
+    const startPage=Math.max(
+      1,
+      Math.min(
+        safeWordListPage-Math.floor(visibleCount/2),
+        maxStart
+      )
+    );
+
+    const pages=Array.from(
+      {length:visibleCount},
+      (_,index)=>startPage+index
+    );
+
+    const firstItem=wordListStart+1;
+    const lastItem=Math.min(
+      wordListStart+WORDS_PER_PAGE,
+      filtered.length
+    );
+
+    return (
+      <div className="word-pagination word-pagination-v8">
+        <span className="word-pagination-summary">
+          {firstItem}–{lastItem} / {filtered.length}
+        </span>
+
+        <div className="word-pagination-controls">
+          <button
+            type="button"
+            disabled={safeWordListPage===1}
+            onClick={()=>goToWordListPageV8(1)}
+          >
+            처음
+          </button>
+
+          <button
+            type="button"
+            disabled={safeWordListPage===1}
+            onClick={()=>goToWordListPageV8(safeWordListPage-1)}
+          >
+            이전
+          </button>
+
+          {pages.map(pageNumber=>
+            <button
+              type="button"
+              key={pageNumber}
+              className={
+                pageNumber===safeWordListPage
+                  ?'page-number active'
+                  :'page-number'
+              }
+              onClick={()=>goToWordListPageV8(pageNumber)}
+            >
+              {pageNumber}
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={safeWordListPage===wordListTotalPages}
+            onClick={()=>goToWordListPageV8(safeWordListPage+1)}
+          >
+            다음
+          </button>
+
+          <button
+            type="button"
+            disabled={safeWordListPage===wordListTotalPages}
+            onClick={()=>goToWordListPageV8(wordListTotalPages)}
+          >
+            끝
+          </button>
+        </div>
+
+        <span className="word-pagination-current">
+          {safeWordListPage} / {wordListTotalPages} 페이지
+        </span>
+      </div>
+    );
+  }
+
+
   function goToWordListPage(target:number){
     const next=Math.max(
       1,
@@ -1209,7 +1902,6 @@ export default function Home() {
     setDetail(null);
     setDeleteId('');
     setPendingImport(null);
-    setCsvImportGuide(false);
     setImportCategory('__file__');
     setImportNewCategory('');
     setCategoryManager(false);
@@ -1275,8 +1967,29 @@ export default function Home() {
     try{
       if(file.size>20*1024*1024){
         throw new Error(
-          '20MB 이하의 CSV 파일을 선택해주세요.'
+          '20MB 이하의 CSV 또는 XLSX 파일을 선택해주세요.'
         );
+      }
+
+      setImportCategory('__file__');
+      setImportNewCategory('');
+
+      const buffer=await file.arrayBuffer();
+
+      // XLSX는 절대로 file.text()/parseCSV()로 보내지 않음
+      if(looksLikeExcelV9(file,buffer)){
+        const imported=parseExcelVocabularyV9(buffer);
+
+        setPendingImport({
+          words:imported.words,
+          skipped:imported.skipped,
+        });
+
+        setNotice(
+          `${imported.sheetName} 시트에서 `+
+          `${imported.words.length}개 단어를 읽었습니다.`
+        );
+        return;
       }
 
       const extension=file.name
@@ -1284,21 +1997,23 @@ export default function Home() {
         .pop()
         ?.toLowerCase();
 
-      if(extension!=='csv'){
-        throw new Error('CSV 파일만 선택할 수 있습니다.');
+      if(extension==='csv'){
+        const text=new TextDecoder('utf-8').decode(
+          new Uint8Array(buffer)
+        );
+
+        setPendingImport(parseCSV(text));
+        return;
       }
 
-      setImportCategory('__file__');
-      setImportNewCategory('');
-
-      setPendingImport(
-        parseCSV(await file.text())
+      throw new Error(
+        'CSV 또는 XLSX 파일만 선택해주세요.'
       );
     }catch(err){
       setNotice(
         err instanceof Error
           ?err.message
-          :'CSV 파일을 읽지 못했습니다.'
+          :'파일을 읽지 못했습니다.'
       );
     }finally{
       if(fileRef.current){
@@ -1786,8 +2501,8 @@ export default function Home() {
 
     <section className="summary-strip" aria-label="학습 요약"><div><span className="stat-icon green"><BookOpen size={20}/></span><div><span>저장한 단어</span><strong>{db.words.length}<small>개</small></strong></div></div><div><span className="stat-icon coral"><RotateCcw size={20}/></span><div><span>오늘 복습할 단어</span><strong>{due.length}<small>개</small></strong></div></div><div><span className="stat-icon violet"><Check size={20}/></span><div><span>익숙해진 단어</span><strong>{mastered}<small>개</small></strong></div></div><div><span className="stat-icon yellow"><Flame size={20}/></span><div><span>연속 학습</span><strong>{streak}<small>일</small></strong></div></div></section>
     {page==='words'&&<><section className="review-band"><div className="review-copy"><span className="tiny-label"><span className="live-dot"/>DAILY REVIEW</span><h2>{due.length?<>기억이 흐려지기 전에,<br/>오늘의 {due.length}개 단어를 만나볼까요?</>:<>단어 하나에서 시작하는<br/>오늘의 작은 성장.</>}</h2><p>{due.length?'짧은 복습으로 어제의 단어를 오래 기억하세요.':'새로운 단어를 모으거나, 저장한 단어를 다시 만나보세요.'}</p><button className="button dark" onClick={()=>{setPage('study');setScope(due.length?'due':'all');}}>오늘의 학습 시작<ArrowRight size={17}/></button></div><div className="review-visual"><img src="https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=850&q=85" alt="펼친 노트에 펜으로 기록하는 모습"/><div className="image-caption"><span>GROW YOUR VOCABULARY</span><strong>Make every word<br/>a little more yours.</strong></div></div></section>
-    <section className="word-section"><div className="section-title"><h2>모든 단어 <span>{db.words.length}</span></h2><div className="actions"><input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={e=>void importFile(e.target.files?.[0])}/><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>setCategoryManager(true)}><Layers size={16}/>카테고리 관리</button><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>setCsvImportGuide(true)}><FileUp size={16}/>CSV 가져오기</button><button className="button text-button" disabled={!db.words.length} onClick={download}><ArrowDownToLine size={16}/>내보내기</button></div></div><div className="filter-row"><div className="tabs" role="tablist" aria-label="단어 필터">{[{id:'all',label:'전체'},{id:'due',label:'복습할 단어'},{id:'favorite',label:'즐겨찾기'},{id:'mastered',label:'익숙한 단어'}].map(t=><button role="tab" aria-selected={filter===t.id} key={t.id} onClick={()=>setFilter(t.id)} className={filter===t.id?'selected':''}>{t.label}</button>)}</div><div className="search-sort"><select className="category-filter" aria-label="카테고리 필터" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value="all">모든 카테고리</option>{categoryNames.map(category=><option key={category} value={category}>{category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select><label className="search"><Search size={17}/><input aria-label="단어 검색" placeholder="단어, 의미 검색" value={search} onChange={e=>setSearch(e.target.value)}/></label><select aria-label="정렬 순서" value={sort} onChange={e=>setSort(e.target.value)}><option value="new">최근 추가순</option><option value="az">알파벳순</option><option value="due">복습 날짜순</option></select></div></div>
-    {!ready?<div className="empty-state">단어장을 불러오는 중...</div>:filtered.length?<>{renderWordPagination()}<div className="word-grid">{pagedWords.map(w=><article className="word-card" key={w.id} onClick={()=>setDetail(w)}><div className="word-card-top"><div className="word-card-labels"><span className={`status ${w.level>=4?'known':w.level?'learning':''}`}>{w.level>=4?'익숙해요':w.level?'학습 중':'새 단어'}</span>{w.category&&<span className="category-badge">{w.category}</span>}</div><button className={`icon-button favorite ${w.favorite?'is-favorite':''}`} aria-label={`${w.word} 즐겨찾기 ${w.favorite?'해제':'추가'}`} aria-pressed={w.favorite} title="즐겨찾기" onClick={e=>{e.stopPropagation();commit({...db,words:db.words.map(item=>item.id===w.id?{...item,favorite:!item.favorite}:item)});}}><Star size={17}/></button></div><div className="word-line"><button className="word-link" onClick={e=>{e.stopPropagation();setDetail(w);}}>{w.word}</button><button className="icon-button" aria-label={`${w.word} 발음 듣기`} title="발음 듣기" onClick={e=>{e.stopPropagation();speak(w.word);}}><AudioLines size={17}/></button></div><p className="meaning">{w.meaning}</p><p className="example">{getExamples(w)[0]?.text||'아직 등록된 예문이 없어요.'}</p><div className="word-footer"><span><Clock3 size={13}/>{w.due<=now?'오늘 복습':`${new Intl.DateTimeFormat('ko-KR',{month:'short',day:'numeric'}).format(w.due)} 복습`}</span><div className="actions"><button className="icon-button" aria-label={`${w.word} 수정`} title="단어 수정" onClick={e=>{e.stopPropagation();setEditor({...w});}}><Pencil size={15}/></button><button className="icon-button danger" aria-label={`${w.word} 삭제`} title="단어 삭제" onClick={e=>{e.stopPropagation();setDeleteId(w.id);}}><Trash2 size={15}/></button></div></div></article>)}</div>
+    <section className="word-section"><div className="section-title"><h2>모든 단어 <span>{db.words.length}</span></h2><div className="actions"><input ref={fileRef} type="file" accept=".csv,.xlsx,.xlsm" hidden onChange={e=>void importFile(e.target.files?.[0])}/><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>setCategoryManager(true)}><Layers size={16}/>카테고리 관리</button><button className="button text-button" disabled={!ready||!!storageError} onClick={()=>fileRef.current?.click()}><FileUp size={16}/>CSV / Excel 가져오기</button><button className="button text-button" disabled={!db.words.length} onClick={download}><ArrowDownToLine size={16}/>내보내기</button></div></div><div className="filter-row"><div className="tabs" role="tablist" aria-label="단어 필터">{[{id:'all',label:'전체'},{id:'due',label:'복습할 단어'},{id:'favorite',label:'즐겨찾기'},{id:'mastered',label:'익숙한 단어'}].map(t=><button role="tab" aria-selected={filter===t.id} key={t.id} onClick={()=>setFilter(t.id)} className={filter===t.id?'selected':''}>{t.label}</button>)}</div><div className="search-sort"><select className="category-filter" aria-label="카테고리 필터" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value="all">모든 카테고리</option>{categoryNames.map(category=><option key={category} value={category}>{category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select><label className="search"><Search size={17}/><input aria-label="단어 검색" placeholder="단어, 의미 검색" value={search} onChange={e=>setSearch(e.target.value)}/></label><select aria-label="정렬 순서" value={sort} onChange={e=>setSort(e.target.value)}><option value="new">최근 추가순</option><option value="az">알파벳순</option><option value="due">복습 날짜순</option></select></div></div>
+    {!ready?<div className="empty-state">단어장을 불러오는 중...</div>:filtered.length?<>{renderWordPagination()}<div className="word-grid">{pagedWords.map(w=><article className="word-card" key={w.id} onClick={()=>setDetail(w)}><div className="word-card-top"><div className="word-card-labels"><span className={`status ${w.level>=4?'known':w.level?'learning':''}`}>{w.level>=4?'익숙해요':w.level?'학습 중':'새 단어'}</span>{w.category&&<span className="category-badge">{w.category}</span>}</div><button className={`icon-button favorite ${w.favorite?'is-favorite':''}`} aria-label={`${w.word} 즐겨찾기 ${w.favorite?'해제':'추가'}`} aria-pressed={w.favorite} title="즐겨찾기" onClick={e=>{e.stopPropagation();commit({...db,words:db.words.map(item=>item.id===w.id?{...item,favorite:!item.favorite}:item)});}}><Star size={17}/></button></div><div className="word-line"><button className="word-link" onClick={e=>{e.stopPropagation();setDetail(w);}}>{w.word}</button><button className="icon-button" aria-label={`${w.word} 발음 듣기`} title="발음 듣기" onClick={e=>{e.stopPropagation();speak(w.word);}}><AudioLines size={17}/></button></div><p className="meaning">{w.meaning}</p><p className="example">{getExamples(w)[0]?.text||'아직 등록된 예문이 없어요.'}</p><div className="word-footer"><span><Clock3 size={13}/>{w.due<=now?'오늘 복습':`${new Intl.DateTimeFormat('ko-KR',{month:'short',day:'numeric'}).format(w.due)} 복습`}</span><div className="actions"><button className="icon-button" aria-label={`${w.word} 수정`} title="단어 수정" onClick={e=>{e.stopPropagation();setEditor({...w});}}><Pencil size={15}/></button><button className="icon-button danger" aria-label={`${w.word} 삭제`} title="단어 삭제" onClick={e=>{e.stopPropagation();setDeleteId(w.id);}}><Trash2 size={15}/></button></div></div></article>)}</div>{renderWordPaginationV8()}
     {renderWordPagination()}</>:<div className="empty-state"><BookOpen size={20}/><h3>{db.words.length?'조건에 맞는 단어가 없어요.':'첫 번째 단어를 기록해보세요.'}</h3><p>{db.words.length?'검색어나 필터를 바꿔보세요.':'어떤 단어와 함께 시작할까요?'}</p>{!db.words.length&&<div className="actions"><button className="button primary" onClick={()=>setEditor(newWordForEditor())}><Plus size={17}/>단어 추가</button><button className="button" onClick={()=>{if(commit({...db,words:demoWords()}))setNotice('예시 단어 6개를 추가했습니다.');}}>예시 단어로 시작</button></div>}</div>}<div className="list-bottom"><span>{filtered.length}개의 단어</span><span><Leaf size={13}/>오늘도 한 단어만큼 자라는 중</span></div></section></>}
     {page==='study'&&<section className="study-section"><div className="quiz-audio-setting"><div><strong>정답 확인 후 자동 발음</strong><p>정답을 확인하면 현재 단어의 발음을 자동으로 들려줘요.</p></div><button type="button" className="button" role="switch" aria-label="정답 확인 후 자동 발음" aria-checked={autoPronunciation} disabled={!ready} onClick={toggleAutoPronunciation}><AudioLines size={17}/>{autoPronunciation?'ON':'OFF'}</button></div>{!quiz?<><div className="section-title"><h2>어떻게 학습할까요?</h2><div className="study-options"><label>학습 범위<select aria-label="학습 범위" value={scope} onChange={e=>setScope(e.target.value)}><option value="due">오늘 복습할 단어 ({due.length})</option><option value="all">모든 단어 ({db.words.length})</option><option value="favorite">즐겨찾기 ({db.words.filter(w=>w.favorite).length})</option><option value="wrong">반복 학습 중 ({wrongWords.length})</option>{categoryNames.map(category=><option key={category} value={`category:${category}`}>카테고리 · {category} ({db.words.filter(w=>(w.category??'')===category).length})</option>)}</select></label><label>문제 수<select aria-label="문제 수" value={quizSize} onChange={e=>setQuizSize(e.target.value)}><option value="5">5개</option><option value="10">10개</option><option value="20">20개</option><option value="30">30개</option><option value="all">전체</option></select></label></div></div><div className="mode-grid">{modes.map(({id,name,desc,icon:Icon})=><button key={id} className="mode-card" onClick={()=>startQuiz(id)} disabled={!ready||!!storageError}><span className="mode-icon"><Icon size={28}/></span><h3>{name}</h3><p>{desc}</p><span className="mode-start">학습 시작<ArrowRight size={18}/></span></button>)}</div><div className="study-note"><Sprout size={22}/><span>오늘 {today.length}번 복습했어요. 작은 반복을 이어가세요.</span></div></>:!current?<div className="quiz-result"><span className="result-icon"><Check size={38}/></span><p className="eyebrow">SESSION COMPLETE</p><h2>오늘도 한 걸음 자랐어요.</h2><p>{quiz.words.length}개 중 {quiz.correct}개를 기억했어요.</p><strong>{Math.round(quiz.correct/quiz.words.length*100)}<small>%</small></strong><div className="result-actions"><button className="button primary" onClick={()=>setQuiz(null)}>학습 목록으로<ArrowRight size={17}/></button></div></div>:<div className="quiz-wrap"><div className="quiz-top"><button className="button text-button" onClick={()=>setQuiz(null)}><ArrowLeft size={17}/>학습 종료</button><span>{modes.find(m=>m.id===quiz.mode)?.name} · {quiz.index+1} / {quiz.words.length}</span></div><div className="progress-track"><div style={{width:`${quiz.index/quiz.words.length*100}%`}}/></div><div className={`question-area ${graded===null?'quiz-question-centered':''}`}><p className="eyebrow">{quiz.mode==='typing'?'이 의미의 영어 단어는?':quiz.mode==='meaningTyping'?'기억나는 의미와 표현을 하나씩 입력하세요':quiz.mode==='context'?'빈칸에 들어갈 단어는?':'이 단어의 의미는?'}</p><h2 className={quiz.mode==='context'?'context-question':''}>{quiz.mode==='typing'?currentMeaning:quiz.mode==='context'?maskedExample(current):current.word}</h2>{quiz.mode==='context'&&graded!==null&&getExamples(current)[0]?.translation&&<p className="context-translation">{getExamples(current)[0].translation}</p>}{(quiz.mode!=='typing'&&quiz.mode!=='context'||quiz.mode==='context'&&graded!==null)&&<button className="icon-button" aria-label="발음 듣기" title="발음 듣기" onClick={()=>speak(current.word)}><AudioLines size={23}/></button>}{quiz.mode==='flash'&&(revealed?<div className="revealed-answer"><MeaningList word={current}/><ExampleList word={current}/></div>:<button className="button" onClick={()=>setRevealed(true)}><RotateCcw size={17}/>정답 보기</button>)}{(quiz.mode==='choice'||quiz.mode==='context')&&<div className="choices">{quiz.choices[quiz.index].map((choice,i)=>{const meaning=choiceMeaning(choice);const value=quiz.mode==='context'&&typeof choice!=='string'?choice.word:meaning;return <button key={`${meaning}-${i}`} className={`choice ${graded!==null&&value===(quiz.mode==='context'?current.word:currentMeaning)?'correct':''} ${graded===false&&value===answer?'incorrect':''}`} disabled={graded!==null} onClick={()=>{setAnswer(value);grade(value===(quiz.mode==='context'?current.word:currentMeaning));}}><span className="choice-number">{i+1}</span><ChoiceContent choice={choice} revealed={graded!==null} wordFirst={quiz.mode==='context'}/></button>;})}</div>}{quiz.mode==='typing'&&<form className="typing-form" onSubmit={e=>{e.preventDefault();if(answer.trim()){const normalized=answer.trim().toLowerCase();const exact=normalized===current.word.trim().toLowerCase();const knownWord=!exact?db.words.find(word=>word.id!==current.id&&word.word.trim().toLowerCase()===normalized):undefined;const alternative=knownWord?findEquivalentMeaningAnswer(answer,current,currentMeaning,db.words):null;const spellingAccepted=!exact&&!knownWord?acceptsSpelling(answer,current.word):false;setAcceptedTypo(spellingAccepted);setAcceptedAlternative(alternative);grade(exact||spellingAccepted||!!alternative);}}}><input ref={typingInputRef} aria-label="영어 단어 정답" autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="영어 단어를 입력하세요" value={answer} disabled={graded!==null} onChange={e=>setAnswer(e.target.value)}/><button className="button primary" disabled={!answer.trim()||graded!==null}>정답 확인</button></form>}{quiz.mode==='meaningTyping'&&graded===null&&<div className="meaning-step-study">
       <div className="meaning-step-head">
@@ -2146,67 +2861,8 @@ export default function Home() {
     </section>}
     {page==='stats'&&<section className="stats-section"><div className="section-title"><h2>이번 주의 꾸준함</h2><span className="muted">최근 7일</span></div><div className="chart" role="img" aria-label={week.map(d=>`${d.day}요일 ${d.count}회`).join(', ')}>{week.map(d=><div className="bar-column" key={d.key}><span>{d.count}</span><div className="bar-track"><div className={d.key===localDate()?'bar today':'bar'} style={{height:`${d.count?Math.max(4,d.count/Math.max(1,...week.map(x=>x.count))*100):0}%`}}/></div><span>{d.day}</span></div>)}</div><div className="history-summary"><div><span>누적 복습</span><strong>{db.reviews.length}<small>회</small></strong></div><div><span>전체 정답률</span><strong>{db.reviews.length?Math.round(db.reviews.filter(r=>r.correct).length/db.reviews.length*100):0}<small>%</small></strong></div><div><span>오늘의 복습</span><strong>{today.length}<small>회</small></strong></div></div><h2 className="history-title">최근 학습</h2>{db.reviews.length?<div className="history-list">{db.reviews.slice(-12).reverse().map((r,i)=><div key={`${r.wordId}-${i}`}><span className={`history-dot ${r.correct?'success':''}`}>{r.correct?<Check size={16}/>:<RotateCcw size={16}/>}</span><strong>{db.words.find(w=>w.id===r.wordId)?.word||'삭제된 단어'}</strong><span>{r.correct?'기억했어요':'다시 학습'}</span><time>{r.date}</time></div>)}</div>:<div className="empty-state"><ChartNoAxesCombined size={32}/><h3>아직 학습 기록이 없어요.</h3><button className="button primary" onClick={()=>setPage('study')}>첫 학습 시작<ArrowRight size={16}/></button></div>}</section>}
     <footer><span>Leafy. 작은 단어가 만드는 큰 변화</span><span>나만의 어휘, 나만의 속도로.</span></footer></main></div>
-    <dialog ref={modalRef} onCancel={closeModal} onClick={e=>{if(e.target===e.currentTarget)closeModal();}} aria-labelledby="modal-title"><div className="modal"><button className="icon-button modal-close" onClick={closeModal} aria-label="닫기" title="닫기"><X size={21}/></button>{editor?<><p className="eyebrow">MY VOCABULARY</p><h2 id="modal-title">{db.words.some(w=>w.id===editor.id)?'단어 수정':'새로운 단어'}</h2><form onSubmit={saveWord} onKeyDown={event=>{if(event.ctrlKey&&event.key==='Enter'&&!event.nativeEvent.isComposing){event.preventDefault();event.currentTarget.requestSubmit();}}} className="word-form">{[{key:'word',label:'영단어',required:true}].map(({key,label,required})=><label key={key}>{label}{required&&<span className="required"> *</span>}<input ref={wordInputRef} autoFocus={key==='word'} required={required} maxLength={key==='word'?120:2000} value={String(editor[key as keyof Word])} onChange={e=>setEditor({...editor,[key]:e.target.value})}/></label>)}<WordEntriesEditor word={editor} onChange={setEditor}/><label>카테고리<select value={editor.category??''} onChange={e=>setEditor({...editor,category:e.target.value})}><option value="">미분류</option>{categoryNames.map(category=><option key={category} value={category}>{category}</option>)}</select></label>{!db.words.some(word=>word.id===editor.id)&&<label className="reuse-category-option"><input type="checkbox" checked={reuseLastCategory} onChange={e=>setReuseCategoryPreference(e.target.checked)}/><span>직전 단어의 카테고리를 자동으로 사용</span>{reuseLastCategory&&<small>{lastSavedCategory?`현재 기준: ${lastSavedCategory}`:'현재 기준: 미분류'}</small>}</label>}<label>메모<textarea rows={3} maxLength={5000} value={editor.memo} onChange={e=>setEditor({...editor,memo:e.target.value})}/></label><div className="modal-footer"><button type="button" className="button" onClick={closeModal}>취소</button><button type="submit" className="button primary"><Check size={17}/>단어 저장</button></div></form></>:detail?<><p className="eyebrow">WORD DETAILS</p><h2 id="modal-title" className="detail-word">{detail.word}</h2>{detail.category&&<div className="detail-category"><span className="category-badge">{detail.category}</span></div>}<MeaningList word={detail}/><WordEntriesDetails word={detail}/><div className="modal-footer split"><button className="button danger" onClick={()=>{setDeleteId(detail.id);setDetail(null);}}><Trash2 size={16}/>삭제</button><button className="button primary" onClick={()=>{setEditor({...detail});setDetail(null);}}><Pencil size={16}/>수정</button></div></>:deleteId?<><h2 id="modal-title">단어를 삭제할까요?</h2><p>‘{db.words.find(w=>w.id===deleteId)?.word}’ 단어가 단어장에서 삭제됩니다.</p><div className="modal-footer"><button className="button" onClick={closeModal}>취소</button><button className="button danger" onClick={()=>{if(commit({...db,words:db.words.filter(w=>w.id!==deleteId)})){closeModal();setNotice('단어를 삭제했습니다.');}}}>삭제</button></div></>:categoryManager?<><p className="eyebrow">WORD CATEGORIES</p><h2 id="modal-title">카테고리 관리</h2><p className="muted">단어를 주제별로 묶고, 카테고리별로 따로 학습할 수 있어요.</p><div className="category-add-row"><input aria-label="새 카테고리 이름" placeholder="예: TOEIC, Part 5, 회사 영어" maxLength={60} value={newCategory} onChange={e=>setNewCategory(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();addCategory();}}}/><button type="button" className="button primary" onClick={addCategory}><Plus size={16}/>추가</button></div>{categoryNames.length?<div className="category-list">{categoryNames.map(category=><div className="category-row" key={category}><div><strong>{category}</strong><span>{db.words.filter(w=>(w.category??'')===category).length}개 단어</span></div><div className="actions"><button type="button" className="icon-button" aria-label={`${category} 이름 변경`} title="이름 변경" onClick={()=>renameCategory(category)}><Pencil size={15}/></button><button type="button" className="icon-button danger" aria-label={`${category} 삭제`} title="카테고리 삭제" onClick={()=>deleteCategory(category)}><Trash2 size={15}/></button></div></div>)}</div>:<div className="category-empty">아직 만든 카테고리가 없어요.</div>}<div className="modal-footer"><button type="button" className="button primary" onClick={closeModal}>완료</button></div></>:csvImportGuide?<>
-  <p className="eyebrow">CSV IMPORT</p>
-  <h2 id="modal-title">CSV 파일을 준비해주세요</h2>
-
-  <p className="muted">
-    아래 헤더 형식으로 CSV 파일을 준비한 다음 파일을 선택해주세요.
-  </p>
-
-  <div className="csv-import-guide">
-    <div className="csv-import-guide-title">
-      헤더 형식
-    </div>
-
-    <code>
-      카테고리,단어,뜻,예문,예문의 의미,메모
-    </code>
-
-    <div className="csv-import-guide-notes">
-      <p>
-        <strong>필수:</strong> 단어, 뜻
-      </p>
-      <p>
-        <strong>선택:</strong> 카테고리, 예문, 예문의 의미, 메모
-      </p>
-      <p>
-        Excel에서 저장할 때
-        <strong> CSV UTF-8(.csv)</strong> 형식을 선택해주세요.
-      </p>
-    </div>
-
-    <div className="csv-import-example">
-      <div>예시</div>
-      <code>
-        TOEIC,applicant,지원자,The applicant submitted a resume.,지원자가 이력서를 제출했다.,Day 1
-      </code>
-    </div>
-  </div>
-
-  <div className="modal-footer">
-    <button
-      type="button"
-      className="button"
-      onClick={closeModal}
-    >
-      취소
-    </button>
-
-    <button
-      type="button"
-      className="button primary"
-      onClick={()=>{
-        setCsvImportGuide(false);
-        fileRef.current?.click();
-      }}
-    >
-      <FileUp size={16}/>
-      CSV 파일 선택
-    </button>
-  </div>
-</>:pendingImport?<>
-  <p className="eyebrow">CSV IMPORT</p>
+    <dialog ref={modalRef} onCancel={closeModal} onClick={e=>{if(e.target===e.currentTarget)closeModal();}} aria-labelledby="modal-title"><div className="modal"><button className="icon-button modal-close" onClick={closeModal} aria-label="닫기" title="닫기"><X size={21}/></button>{editor?<><p className="eyebrow">MY VOCABULARY</p><h2 id="modal-title">{db.words.some(w=>w.id===editor.id)?'단어 수정':'새로운 단어'}</h2><form onSubmit={saveWord} onKeyDown={event=>{if(event.ctrlKey&&event.key==='Enter'&&!event.nativeEvent.isComposing){event.preventDefault();event.currentTarget.requestSubmit();}}} className="word-form">{[{key:'word',label:'영단어',required:true}].map(({key,label,required})=><label key={key}>{label}{required&&<span className="required"> *</span>}<input ref={wordInputRef} autoFocus={key==='word'} required={required} maxLength={key==='word'?120:2000} value={String(editor[key as keyof Word])} onChange={e=>setEditor({...editor,[key]:e.target.value})}/></label>)}<WordEntriesEditor word={editor} onChange={setEditor}/><label>카테고리<select value={editor.category??''} onChange={e=>setEditor({...editor,category:e.target.value})}><option value="">미분류</option>{categoryNames.map(category=><option key={category} value={category}>{category}</option>)}</select></label>{!db.words.some(word=>word.id===editor.id)&&<label className="reuse-category-option"><input type="checkbox" checked={reuseLastCategory} onChange={e=>setReuseCategoryPreference(e.target.checked)}/><span>직전 단어의 카테고리를 자동으로 사용</span>{reuseLastCategory&&<small>{lastSavedCategory?`현재 기준: ${lastSavedCategory}`:'현재 기준: 미분류'}</small>}</label>}<label>메모<textarea rows={3} maxLength={5000} value={editor.memo} onChange={e=>setEditor({...editor,memo:e.target.value})}/></label><div className="modal-footer"><button type="button" className="button" onClick={closeModal}>취소</button><button type="submit" className="button primary"><Check size={17}/>단어 저장</button></div></form></>:detail?<><p className="eyebrow">WORD DETAILS</p><h2 id="modal-title" className="detail-word">{detail.word}</h2>{detail.category&&<div className="detail-category"><span className="category-badge">{detail.category}</span></div>}<MeaningList word={detail}/><WordEntriesDetails word={detail}/><div className="modal-footer split"><button className="button danger" onClick={()=>{setDeleteId(detail.id);setDetail(null);}}><Trash2 size={16}/>삭제</button><button className="button primary" onClick={()=>{setEditor({...detail});setDetail(null);}}><Pencil size={16}/>수정</button></div></>:deleteId?<><h2 id="modal-title">단어를 삭제할까요?</h2><p>‘{db.words.find(w=>w.id===deleteId)?.word}’ 단어가 단어장에서 삭제됩니다.</p><div className="modal-footer"><button className="button" onClick={closeModal}>취소</button><button className="button danger" onClick={()=>{if(commit({...db,words:db.words.filter(w=>w.id!==deleteId)})){closeModal();setNotice('단어를 삭제했습니다.');}}}>삭제</button></div></>:categoryManager?<><p className="eyebrow">WORD CATEGORIES</p><h2 id="modal-title">카테고리 관리</h2><p className="muted">단어를 주제별로 묶고, 카테고리별로 따로 학습할 수 있어요.</p><div className="category-add-row"><input aria-label="새 카테고리 이름" placeholder="예: TOEIC, Part 5, 회사 영어" maxLength={60} value={newCategory} onChange={e=>setNewCategory(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();addCategory();}}}/><button type="button" className="button primary" onClick={addCategory}><Plus size={16}/>추가</button></div>{categoryNames.length?<div className="category-list">{categoryNames.map(category=><div className="category-row" key={category}><div><strong>{category}</strong><span>{db.words.filter(w=>(w.category??'')===category).length}개 단어</span></div><div className="actions"><button type="button" className="icon-button" aria-label={`${category} 이름 변경`} title="이름 변경" onClick={()=>renameCategory(category)}><Pencil size={15}/></button><button type="button" className="icon-button danger" aria-label={`${category} 삭제`} title="카테고리 삭제" onClick={()=>deleteCategory(category)}><Trash2 size={15}/></button></div></div>)}</div>:<div className="category-empty">아직 만든 카테고리가 없어요.</div>}<div className="modal-footer"><button type="button" className="button primary" onClick={closeModal}>완료</button></div></>:pendingImport?<>
+  <p className="eyebrow">FILE IMPORT</p>
   <h2 id="modal-title">단어 가져오기</h2>
 
   <p>{pendingImport.words.length}개 단어를 찾았습니다.</p>
@@ -2224,7 +2880,7 @@ export default function Home() {
         onChange={e=>setImportCategory(e.target.value)}
       >
         <option value="__file__">
-          CSV의 카테고리 사용
+          Excel의 카테고리 사용
         </option>
 
         <option value="__none__">

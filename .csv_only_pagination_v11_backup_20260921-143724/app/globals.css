@@ -784,43 +784,45 @@
 }
 
 
-/* CSV_IMPORT_GUIDE_V11 */
-.csv-import-guide{
-  margin:18px 0;
-  padding:16px;
-  border:1px solid #dfe7e1;
-  border-radius:10px;
-  background:#f8faf8;
+/* WORD_PAGINATION_V8 */
+.word-pagination-v8{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:center;
+  gap:10px 14px;
+  margin:16px 0 20px;
+  padding:10px 12px;
 }
 
-.csv-import-guide-title,
-.csv-import-example>div{
-  margin-bottom:8px;
-  color:#53635a;
-  font-size:12px;
+.word-pagination-v8 .word-pagination-controls{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+}
+
+.word-pagination-v8 .page-number{
+  min-width:36px;
+}
+
+.word-pagination-v8 .page-number.active{
+  background:#4f755c;
+  border-color:#4f755c;
+  color:#fff;
   font-weight:700;
 }
 
-.csv-import-guide code{
-  display:block;
-  overflow-x:auto;
-  padding:11px 12px;
-  border:1px solid #e0e7e2;
-  border-radius:8px;
-  background:#fff;
-  color:#35433a;
+.word-pagination-v8 .word-pagination-summary,
+.word-pagination-v8 .word-pagination-current{
+  color:var(--muted,#6f7a73);
   font-size:12px;
-  line-height:1.6;
   white-space:nowrap;
 }
 
-.csv-import-guide-notes{
-  margin:14px 0;
-  color:#6c7970;
-  font-size:12px;
-  line-height:1.7;
-}
-
-.csv-import-guide-notes p{
-  margin:3px 0;
+@media(max-width:720px){
+  .word-pagination-v8{
+    flex-direction:column;
+  }
 }
