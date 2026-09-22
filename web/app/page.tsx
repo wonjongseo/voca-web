@@ -687,7 +687,7 @@ export default function Home() {
   const [acceptedAlternative,setAcceptedAlternative] = useState<Word|null>(null);
   const [revealed,setRevealed] = useState(false);
   const [graded,setGraded] = useState<boolean|null>(null);
-  const [now,setNow] = useState(Date.now());
+  const [now,setNow] = useState(0); // HYDRATION_STABLE_TIME_V1
   const fileRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDialogElement>(null);
   const wordInputRef = useRef<HTMLInputElement>(null);
@@ -750,6 +750,7 @@ export default function Home() {
     try {const raw=localStorage.getItem(STORAGE_KEY); let data=raw ? loadDatabase(raw) : emptyDB; const lastUid=localStorage.getItem(LAST_CLOUD_UID_KEY); if(categoryDirty())data=mergeCategorySnapshot(data,lastUid||null,true); if(!readCategorySnapshot()&&normalizedCategories(data).length)writeCategorySnapshot(data,lastUid||null); dbRef.current=data; setDB(data);}
     catch(err){setStorageError(err instanceof Error ? err.message : '브라우저 저장소에 접근할 수 없습니다.');}
     setReady(true);
+    setNow(Date.now()); // HYDRATION_STABLE_TIME_V1
     const timer=setInterval(()=>setNow(Date.now()),30000);
     const listener=(event:StorageEvent)=>{if(event.key===STORAGE_KEY){try{const data=event.newValue ? loadDatabase(event.newValue) : emptyDB; dbRef.current=data;setDB(data);setQuiz(null);setEditor(null);setDetail(null);setDeleteId('');setPendingImport(null);setCategoryManager(false);setNotice('다른 탭의 변경사항을 불러왔습니다.');}catch{setStorageError('다른 탭에서 변경된 데이터를 읽지 못했습니다.');}}};
     window.addEventListener('storage',listener);
@@ -1923,7 +1924,7 @@ export default function Home() {
 
   return <div className="app-shell">
     <aside className="sidebar"><a className="brand" href="/" aria-label="Leafy 홈"><span className="brand-symbol"><Leaf size={24}/></span>Leafy<span className="brand-dot">.</span></a><span className="workspace-label">MY LEARNING SPACE</span><nav aria-label="주 메뉴">{[{id:'words',label:'나의 단어장',icon:BookOpen},{id:'study',label:'오늘의 학습',icon:Layers},{id:'wrong',label:'오답노트',icon:RotateCcw},{id:'stats',label:'학습 기록',icon:ChartNoAxesCombined}].map(({id,label,icon:Icon})=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>{setPage(id);setQuiz(null);}}><Icon size={19}/><span>{label}</span>{id==='study'&&due.length>0&&<span className="nav-count">{due.length}</span>}{id==='wrong'&&wrongWords.length>0&&<span className="nav-count wrong-count">{wrongWords.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="little-sprout"><Sprout size={29}/></div><strong>조금씩, 매일, 꾸준히.</strong><p>오늘의 단어가<br/>내일의 나를 넓혀줘요.</p><div className="local-indicator"><span/>이 브라우저에 저장됨</div></div></aside>
-    <div className="main-area"><header className="topbar"><div><span className="muted">나의 학습 공간</span><ChevronRight size={14}/><span>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':page==='wrong'?'오답노트':'학습 기록'}</span></div><span className="date-label">{new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short'}).format(now)}</span><button
+    <div className="main-area"><header className="topbar"><div><span className="muted">나의 학습 공간</span><ChevronRight size={14}/><span>{page==='words'?'나의 단어장':page==='study'?'오늘의 학습':page==='wrong'?'오답노트':'학습 기록'}</span></div><span className="date-label">{ready?new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short'}).format(now):''}</span><button
       type="button"
       className="button theme-toggle"
       onClick={cycleTheme}
