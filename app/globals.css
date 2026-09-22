@@ -1135,3 +1135,67 @@ html[data-theme="dark"] .meaning-help-popover{
     font-size:0;
   }
 }
+
+
+/* MEANING_HELP_INLINE_V20 */
+.meaning-step-input{
+  position:relative;
+}
+
+.meaning-step-input input{
+  padding-right:48px;
+}
+
+.meaning-input-with-help{
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  z-index:5;
+  display:flex;
+  align-items:center;
+}
+
+.meaning-input-help-button{
+  width:30px;
+  height:30px;
+  padding:0;
+  border:0;
+  border-radius:999px;
+  display:grid;
+  place-items:center;
+  background:transparent;
+  color:#7f8b81;
+  cursor:pointer;
+}
+
+.meaning-input-help-button:hover{
+  background:#eef4ef;
+  color:#456451;
+}
+
+.meaning-input-help-popover{
+  right:0;
+  bottom:38px;
+}
+
+html[data-theme="dark"] .meaning-input-help-button{
+  color:#a7b5ac;
+}
+
+html[data-theme="dark"] .meaning-input-help-button:hover{
+  background:#26342c;
+  color:#dce8df;
+}
+
+@media(max-width:600px){
+  .meaning-step-input{
+    position:relative;
+  }
+
+  .meaning-input-with-help{
+    top:auto;
+    bottom:8px;
+    transform:none;
+  }
+}

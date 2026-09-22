@@ -2160,6 +2160,34 @@ export default function Home() {
             }}
             onChange={e=>setMeaningInput(e.target.value)}
           />
+
+          <div className="meaning-input-with-help">
+            <button
+              type="button"
+              tabIndex={-1}
+              className="meaning-input-help-button"
+              aria-label="의미 입력 도움말"
+              aria-expanded={meaningHelpOpen}
+              onClick={e=>{
+                e.preventDefault();
+                setMeaningHelpOpen(value=>!value);
+              }}
+            >
+              <CircleHelp size={16}/>
+            </button>
+
+            {meaningHelpOpen&&
+              <div
+                className="meaning-help-popover meaning-input-help-popover"
+                role="tooltip"
+              >
+                괄호 안의 설명은 입력하지 않아도 돼요.
+                쉼표, 세미콜론 또는 · 로 등록한 표현은 하나씩 맞힐 수 있어요.
+                힌트를 사용해도 오답 처리되지 않으며,
+                등록한 모든 의미와 표현을 직접 입력하면 정답으로 처리해요.
+              </div>
+            }
+          </div>
         </label>
 
         {meaningAttemptMessage&&<p className={
@@ -2234,23 +2262,6 @@ export default function Home() {
         </div>
       </form>
 
-      <div className="meaning-help-wrap">
-        <button
-          type="button"
-          className="meaning-help-button"
-          aria-label="의미 입력 도움말"
-          aria-expanded={meaningHelpOpen}
-          onClick={()=>setMeaningHelpOpen(value=>!value)}
-        >
-          <CircleHelp size={16}/>
-        </button>
-        {meaningHelpOpen&&<div className="meaning-help-popover" role="tooltip">
-          괄호 안의 설명은 입력하지 않아도 돼요.
-          쉼표, 세미콜론 또는 · 로 등록한 표현은 하나씩 맞힐 수 있어요.
-          힌트를 사용해도 오답 처리되지 않으며,
-          등록한 모든 의미와 표현을 직접 입력하면 정답으로 처리해요.
-        </div>}
-      </div>
     </div>}{graded!==null?<div className={`feedback ${graded?'positive':'negative'}`}>
       <strong>
         {quiz.mode==='meaningTyping'
