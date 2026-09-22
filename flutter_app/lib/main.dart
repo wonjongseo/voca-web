@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -63,6 +64,9 @@ Future<void> main() async {
     );
     final ads = AdsController();
 
+    Get.put<LeafyController>(controller, permanent: true);
+    Get.put<AdsController>(ads, permanent: true);
+
     runApp(LeafyApp(controller: controller, ads: ads));
     unawaited(controller.start());
     unawaited(
@@ -73,7 +77,7 @@ Future<void> main() async {
     );
   } catch (error) {
     runApp(
-      MaterialApp(
+      GetMaterialApp(
         debugShowCheckedModeBanner: false,
         home: Scaffold(
           body: Center(
@@ -92,23 +96,19 @@ Future<void> main() async {
 }
 
 class LeafyApp extends StatelessWidget {
-  const LeafyApp({
-    super.key,
-    required this.controller,
-    required this.ads,
-  });
+  const LeafyApp({super.key, required this.controller, required this.ads});
 
   final LeafyController controller;
   final AdsController ads;
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Leafy',
-        debugShowCheckedModeBanner: false,
-        locale: const Locale('ko'),
-        supportedLocales: const [Locale('ko'), Locale('en')],
-        localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        theme: LeafyTheme.light(),
-        home: HomeScreen(controller: controller, ads: ads),
-      );
+  Widget build(BuildContext context) => GetMaterialApp(
+    title: 'Leafy',
+    debugShowCheckedModeBanner: false,
+    locale: const Locale('ko'),
+    supportedLocales: const [Locale('ko'), Locale('en')],
+    localizationsDelegates: GlobalMaterialLocalizations.delegates,
+    theme: LeafyTheme.light(),
+    home: HomeScreen(controller: controller, ads: ads),
+  );
 }

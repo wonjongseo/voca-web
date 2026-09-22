@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 
 import '../domain/quiz_logic.dart';
 import '../domain/vocabulary.dart';
@@ -7,6 +8,23 @@ import '../state/leafy_controller.dart';
 import 'app_theme.dart';
 
 enum QuizMode { flash, choice, typing, meaning, context }
+
+class _QuizUiController extends GetxController {
+  int index = 0;
+  int correctCount = 0;
+  bool revealed = false;
+  bool saving = false;
+  bool? result;
+  List<MeaningStudyItem> meaningItems = const [];
+  final Set<String> completedMeaningKeys = <String>{};
+  final Set<String> hintMeaningKeys = <String>{};
+  String meaningMessage = '';
+
+  void mutate(VoidCallback action) {
+    action();
+    update();
+  }
+}
 
 const modeNames = {
   QuizMode.flash: '플래시카드',
@@ -44,19 +62,28 @@ class _QuizScreenState extends State<QuizScreen> {
   final input = TextEditingController();
   final speech = Pronunciation();
 
-  int index = 0;
-  int correctCount = 0;
-  bool revealed = false;
-  bool saving = false;
-  bool? result;
+  final _ui = _QuizUiController();
+
+  int get index => _ui.index;
+  set index(int value) => _ui.index = value;
+  int get correctCount => _ui.correctCount;
+  set correctCount(int value) => _ui.correctCount = value;
+  bool get revealed => _ui.revealed;
+  set revealed(bool value) => _ui.revealed = value;
+  bool get saving => _ui.saving;
+  set saving(bool value) => _ui.saving = value;
+  bool? get result => _ui.result;
+  set result(bool? value) => _ui.result = value;
 
   late final String? uid = widget.controller.user?.uid;
   late final String? scope = widget.controller.groupId;
 
-  List<MeaningStudyItem> meaningItems = const [];
-  final Set<String> completedMeaningKeys = {};
-  final Set<String> hintMeaningKeys = {};
-  String meaningMessage = '';
+  List<MeaningStudyItem> get meaningItems => _ui.meaningItems;
+  set meaningItems(List<MeaningStudyItem> value) => _ui.meaningItems = value;
+  Set<String> get completedMeaningKeys => _ui.completedMeaningKeys;
+  Set<String> get hintMeaningKeys => _ui.hintMeaningKeys;
+  String get meaningMessage => _ui.meaningMessage;
+  set meaningMessage(String value) => _ui.meaningMessage = value;
 
   late final List<List<String>> options = widget.words.map((word) {
     final target = word.meanings.isEmpty ? word.meaning : word.meanings.first;
@@ -77,16 +104,9 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_identityChanged);
     _prepareQuestion();
   }
 
-  void _identityChanged() {
-    if (widget.controller.user?.uid != uid ||
-        widget.controller.groupId != scope) {
-      if (mounted) Navigator.of(context).pop();
-    }
-  }
 
   void _prepareQuestion() {
     input.clear();
@@ -103,7 +123,6 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   void dispose() {
-    widget.controller.removeListener(_identityChanged);
     input.dispose();
     speech.stop();
     super.dispose();
@@ -123,13 +142,13 @@ class _QuizScreenState extends State<QuizScreen> {
   Future<void> grade(bool correct) async {
     if (saving || result != null) return;
 
-    setState(() => saving = true);
+    _ui.mutate(() => saving = true);
 
     try {
       await widget.controller.grade(currentWord, correct);
       if (!mounted) return;
 
-      setState(() {
+      _ui.mutate(() {
         result = correct;
         revealed = true;
         if (correct) correctCount++;
@@ -144,7 +163,7 @@ class _QuizScreenState extends State<QuizScreen> {
         SnackBar(content: Text('채점 결과를 저장하지 못했습니다. $error')),
       );
     } finally {
-      if (mounted) setState(() => saving = false);
+      if (mounted) _ui.mutate(() => saving = false);
     }
   }
 
@@ -161,7 +180,7 @@ class _QuizScreenState extends State<QuizScreen> {
     );
 
     if (!match.valid) {
-      setState(() {
+      _ui.mutate(() {
         meaningMessage = '남아 있는 의미나 표현과 일치하지 않아요.';
         input.clear();
       });
@@ -169,14 +188,14 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     if (match.duplicateOnly) {
-      setState(() {
+      _ui.mutate(() {
         meaningMessage = '이미 맞힌 표현이에요. 다른 표현을 떠올려보세요.';
         input.clear();
       });
       return;
     }
 
-    setState(() {
+    _ui.mutate(() {
       completedMeaningKeys.addAll(match.matched.map((item) => item.key));
       meaningMessage =
           '${match.matched.map((item) => item.label).join(', ')} · 기억했어요.';
@@ -192,7 +211,7 @@ class _QuizScreenState extends State<QuizScreen> {
     for (final item in meaningItems) {
       if (completedMeaningKeys.contains(item.key)) continue;
       if (hintMeaningKeys.contains(item.key)) continue;
-      setState(() => hintMeaningKeys.add(item.key));
+      _ui.mutate(() => hintMeaningKeys.add(item.key));
       return;
     }
   }
@@ -235,7 +254,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   value: widget.controller.autoSpeak,
                   onChanged: (value) async {
                     await widget.controller.setAutoSpeak(value);
-                    if (mounted) setState(() {});
+                    if (mounted) _ui.mutate(() {});
                   },
                 ),
               ),
@@ -333,7 +352,7 @@ class _QuizScreenState extends State<QuizScreen> {
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
-          onPressed: () => setState(() => revealed = true),
+          onPressed: () => _ui.mutate(() => revealed = true),
           icon: const Icon(Icons.visibility_outlined),
           label: const Text('정답 보기'),
         ),
@@ -768,7 +787,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
   void _next() {
     speech.stop();
-    setState(() {
+    _ui.mutate(() {
       index++;
       if (index < widget.words.length) _prepareQuestion();
     });
@@ -776,9 +795,25 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final done = index >= widget.words.length;
+    return GetBuilder<LeafyController>(
+      init: widget.controller,
+      global: false,
+      builder: (_) => GetBuilder<_QuizUiController>(
+        init: _ui,
+        global: false,
+        builder: (_) {
+          final identityChanged =
+              widget.controller.user?.uid != uid ||
+              widget.controller.groupId != scope;
+          if (identityChanged) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+            });
+          }
 
-    return Scaffold(
+          final done = index >= widget.words.length;
+
+          return Scaffold(
       appBar: AppBar(
         title: Text(modeNames[widget.mode]!),
         actions: [
@@ -824,6 +859,9 @@ class _QuizScreenState extends State<QuizScreen> {
             ),
           ),
         ),
+      ),
+          );
+        },
       ),
     );
   }

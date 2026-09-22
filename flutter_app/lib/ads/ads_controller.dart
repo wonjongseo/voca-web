@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:get/get.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-class AdsController extends ChangeNotifier {
+class AdsController extends GetxController {
   static const enabled = bool.fromEnvironment(
     'ADS_ENABLED',
     defaultValue: false,
@@ -53,13 +54,13 @@ class AdsController extends ChangeNotifier {
         PrivacyOptionsRequirementStatus.required;
     ready = await ConsentInformation.instance.canRequestAds();
     if (ready) await MobileAds.instance.initialize();
-    notifyListeners();
+    update();
   }
 
   Future<void> privacyOptions() async {
     // Remove the current banner before a user changes consent.
     ready = false;
-    notifyListeners();
+    update();
     final done = Completer<void>();
     ConsentForm.showPrivacyOptionsForm((error) {
       done.complete();

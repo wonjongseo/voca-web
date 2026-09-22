@@ -1,32 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+
 import 'ads_controller.dart';
 
-/// Mobile only. Web advertisements belong in the host HTML/React AdSense slot.
-class BannerSlot extends StatefulWidget {
-  const BannerSlot({super.key, required this.ads});
-  final AdsController ads;
-  @override
-  State<BannerSlot> createState() => _BannerSlotState();
-}
+class _BannerSlotController extends GetxController {
+  _BannerSlotController(this.ads);
 
-class _BannerSlotState extends State<BannerSlot> {
-  BannerAd? _ad;
-  bool _loaded = false;
+  final AdsController ads;
+  BannerAd? ad;
+  bool loaded = false;
+
   @override
-  void initState() {
-    super.initState();
-    if (!widget.ads.ready || !widget.ads.supported) return;
-    _ad = BannerAd(
+  void onInit() {
+    super.onInit();
+    _load();
+  }
+
+  void _load() {
+    if (!ads.ready || !ads.supported || ads.bannerId.isEmpty) return;
+
+    ad = BannerAd(
       size: AdSize.banner,
-      adUnitId: widget.ads.bannerId,
+      adUnitId: ads.bannerId,
       listener: BannerAdListener(
         onAdLoaded: (_) {
-          if (mounted) setState(() => _loaded = true);
+          loaded = true;
+          update();
         },
-        onAdFailedToLoad: (ad, error) {
-          ad.dispose();
-          _ad = null;
+        onAdFailedToLoad: (failedAd, error) {
+          failedAd.dispose();
+          ad = null;
+          loaded = false;
+          update();
         },
       ),
       request: const AdRequest(),
@@ -34,29 +40,43 @@ class _BannerSlotState extends State<BannerSlot> {
   }
 
   @override
-  void dispose() {
-    _ad?.dispose();
-    super.dispose();
+  void onClose() {
+    ad?.dispose();
+    ad = null;
+    super.onClose();
   }
+}
+
+class BannerSlot extends StatelessWidget {
+  const BannerSlot({super.key, required this.ads});
+
+  final AdsController ads;
 
   @override
-  Widget build(BuildContext context) => !_loaded || _ad == null
-      ? const SizedBox.shrink()
-      : SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                '광고',
-                style: TextStyle(fontSize: 10, color: Colors.grey),
-              ),
-              SizedBox(
-                width: _ad!.size.width.toDouble(),
-                height: _ad!.size.height.toDouble(),
-                child: AdWidget(ad: _ad!),
-              ),
-            ],
-          ),
-        );
+  Widget build(BuildContext context) => GetBuilder<_BannerSlotController>(
+        init: _BannerSlotController(ads),
+        global: false,
+        builder: (state) {
+          final ad = state.ad;
+          if (!state.loaded || ad == null) return const SizedBox.shrink();
+
+          return SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '광고',
+                  style: TextStyle(fontSize: 10, color: Colors.grey),
+                ),
+                SizedBox(
+                  width: ad.size.width.toDouble(),
+                  height: ad.size.height.toDouble(),
+                  child: AdWidget(ad: ad),
+                ),
+              ],
+            ),
+          );
+        },
+      );
 }

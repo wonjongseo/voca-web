@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -16,7 +17,7 @@ import '../domain/vocabulary.dart';
 // FLUTTER_WEB_PARITY_MODERN_UI_V2
 // FLUTTER_335_WEB_PARITY_V3
 // FLUTTER_335_BUILD_FIX_V4
-class LeafyController extends ChangeNotifier {
+class LeafyController extends GetxController {
   LeafyController(
     this.preferences, {
     this.auth,
@@ -267,7 +268,7 @@ class LeafyController extends ChangeNotifier {
     busy = true;
     loaded = false;
     error = null;
-    notifyListeners();
+    update();
 
     try {
       if (user == null) {
@@ -311,7 +312,7 @@ class LeafyController extends ChangeNotifier {
     } finally {
       if (generation == _generation) {
         busy = false;
-        notifyListeners();
+        update();
       }
     }
   }
@@ -359,7 +360,7 @@ class LeafyController extends ChangeNotifier {
     busy = true;
     loaded = false;
     error = null;
-    notifyListeners();
+    update();
 
     try {
       final guestRepository = GuestRepository(preferences);
@@ -387,7 +388,7 @@ class LeafyController extends ChangeNotifier {
     } finally {
       if (generation == _generation) {
         busy = false;
-        notifyListeners();
+        update();
       }
     }
   }
@@ -403,7 +404,7 @@ class LeafyController extends ChangeNotifier {
     final generation = _generation;
     busy = true;
     error = null;
-    notifyListeners();
+    update();
 
     try {
       await write(_repository!);
@@ -424,7 +425,7 @@ class LeafyController extends ChangeNotifier {
     } finally {
       if (generation == _generation) {
         busy = false;
-        notifyListeners();
+        update();
       }
     }
   }
@@ -555,12 +556,12 @@ class LeafyController extends ChangeNotifier {
 
   Future<void> setAutoSpeak(bool value) async {
     await preferences.setBool('leafy-auto-speak', value);
-    notifyListeners();
+    update();
   }
 
   Future<void> setAccent(String value) async {
     await preferences.setString('leafy-accent', value);
-    notifyListeners();
+    update();
   }
 
   Future<void> signIn(
@@ -665,8 +666,8 @@ class LeafyController extends ChangeNotifier {
   }
 
   @override
-  void dispose() {
+  void onClose() {
     _authSubscription?.cancel();
-    super.dispose();
+    super.onClose();
   }
 }
