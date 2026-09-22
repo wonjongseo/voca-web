@@ -9,6 +9,7 @@ import '../domain/vocabulary.dart';
 import '../services/csv_transfer.dart';
 import '../services/pronunciation.dart';
 import '../state/leafy_controller.dart';
+import '../state/theme_controller.dart';
 import 'app_theme.dart';
 import 'quiz_screen.dart';
 import 'word_editor.dart';
@@ -328,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           onRefresh: c.refreshScope,
                           child: ListView(
                             physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(18, 12, 18, 104),
+                            padding: const EdgeInsets.fromLTRB(18, 20, 18, 122),
                             children: [
                               _header(),
                               const SizedBox(height: 18),
@@ -559,10 +560,26 @@ class _HomeScreenState extends State<HomeScreen> {
         _empty(
           wrongOnly
               ? '현재 오답노트에 남아 있는 단어가 없어요.'
-              : '아직 단어가 없어요. 새 단어를 추가하거나 CSV를 가져오세요.',
+              : filter == '즐겨찾기'
+                  ? '즐겨찾기한 단어가 없어요. 별표를 눌러 중요한 단어를 모아보세요.'
+                  : filter == '복습'
+                      ? '지금 복습할 단어가 없어요. 복습 시간이 되면 여기에 표시됩니다.'
+                      : filter == '익숙한 단어'
+                          ? '아직 익숙한 단어가 없어요. 학습을 이어가면 여기에 모입니다.'
+                          : search.trim().isNotEmpty
+                              ? '검색 결과가 없어요. 다른 검색어를 입력해보세요.'
+                              : category != '전체'
+                                  ? '선택한 카테고리에 표시할 단어가 없어요.'
+                                  : '아직 단어가 없어요. 새 단어를 추가하거나 CSV를 가져오세요.',
           wrongOnly
               ? Icons.check_circle_outline_rounded
-              : Icons.menu_book_outlined,
+              : filter == '즐겨찾기'
+                  ? Icons.star_border_rounded
+                  : filter == '복습'
+                      ? Icons.schedule_rounded
+                      : filter == '익숙한 단어'
+                          ? Icons.workspace_premium_outlined
+                          : Icons.menu_book_outlined,
         ),
       for (final word in pagedWords) _wordCard(word, wrongOnly: wrongOnly),
       if (words.isNotEmpty && pageCount > 1) ...[
@@ -1095,6 +1112,50 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ]),
     ],
+    GetBuilder<ThemeController>(
+      builder: (themeController) => _section(
+        '화면',
+        Icons.palette_outlined,
+        [
+          ListTile(
+            leading: Icon(themeController.icon),
+            title: const Text('테마'),
+            subtitle: Text(themeController.label),
+          ),
+          RadioListTile<LeafyThemePreference>(
+            title: const Text('시스템 설정'),
+            value: LeafyThemePreference.system,
+            groupValue: themeController.preference,
+            onChanged: (value) {
+              if (value != null) {
+                themeController.setPreference(value);
+              }
+            },
+          ),
+          RadioListTile<LeafyThemePreference>(
+            title: const Text('라이트 모드'),
+            value: LeafyThemePreference.light,
+            groupValue: themeController.preference,
+            onChanged: (value) {
+              if (value != null) {
+                themeController.setPreference(value);
+              }
+            },
+          ),
+          RadioListTile<LeafyThemePreference>(
+            title: const Text('다크 모드'),
+            value: LeafyThemePreference.dark,
+            groupValue: themeController.preference,
+            onChanged: (value) {
+              if (value != null) {
+                themeController.setPreference(value);
+              }
+            },
+          ),
+        ],
+      ),
+    ),
+    const SizedBox(height: 14),
     const SizedBox(height: 14),
     _section('발음', Icons.volume_up_outlined, [
       Padding(

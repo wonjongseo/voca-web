@@ -12,6 +12,13 @@ class LeafyTheme {
   static const warning = Color(0xffa66b20);
   static const danger = Color(0xffa94747);
 
+  static const darkBackground = Color(0xff101713);
+  static const darkSurface = Color(0xff18211c);
+  static const darkSurfaceSoft = Color(0xff223128);
+  static const darkBorder = Color(0xff314238);
+  static const darkText = Color(0xffe7efe9);
+  static const darkMuted = Color(0xffa7b5ac);
+
   static ThemeData light() {
     final scheme = ColorScheme.fromSeed(
       seedColor: primary,
@@ -19,81 +26,170 @@ class LeafyTheme {
       surface: surface,
     );
 
+    return _build(
+      scheme: scheme,
+      scaffold: background,
+      card: surface,
+      soft: surfaceSoft,
+      borderColor: border,
+      foreground: text,
+      mutedColor: muted,
+    );
+  }
+
+  static ThemeData dark() {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: primary,
+      brightness: Brightness.dark,
+      surface: darkSurface,
+    ).copyWith(
+      primary: const Color(0xff86c79d),
+      onPrimary: const Color(0xff0f2a19),
+      surface: darkSurface,
+      onSurface: darkText,
+      outline: darkBorder,
+    );
+
+    return _build(
+      scheme: scheme,
+      scaffold: darkBackground,
+      card: darkSurface,
+      soft: darkSurfaceSoft,
+      borderColor: darkBorder,
+      foreground: darkText,
+      mutedColor: darkMuted,
+    );
+  }
+
+  static ThemeData _build({
+    required ColorScheme scheme,
+    required Color scaffold,
+    required Color card,
+    required Color soft,
+    required Color borderColor,
+    required Color foreground,
+    required Color mutedColor,
+  }) {
     return ThemeData(
       useMaterial3: true,
+      brightness: scheme.brightness,
       colorScheme: scheme,
-      scaffoldBackgroundColor: background,
-      appBarTheme: const AppBarThemeData(
+      scaffoldBackgroundColor: scaffold,
+      canvasColor: scaffold,
+      dividerColor: borderColor,
+      appBarTheme: AppBarThemeData(
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: background,
-        foregroundColor: text,
+        backgroundColor: scaffold,
+        foregroundColor: foreground,
         surfaceTintColor: Colors.transparent,
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: surface,
+        color: card,
         surfaceTintColor: Colors.transparent,
-        margin: const EdgeInsets.symmetric(vertical: 7),
+        margin: const EdgeInsets.symmetric(vertical: 8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: border),
+          side: BorderSide(color: borderColor),
         ),
       ),
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
-        fillColor: surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        fillColor: card,
+        labelStyle: TextStyle(color: mutedColor),
+        hintStyle: TextStyle(color: mutedColor),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: border),
+          borderSide: BorderSide(color: borderColor),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: border),
+          borderSide: BorderSide(color: borderColor),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: primary, width: 1.4),
+          borderSide: BorderSide(
+            color: scheme.primary,
+            width: 1.4,
+          ),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size(0, 48),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(0, 48),
-          side: const BorderSide(color: border),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          foregroundColor: primaryDark,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          side: BorderSide(color: borderColor),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          foregroundColor: scheme.brightness == Brightness.dark
+              ? foreground
+              : primaryDark,
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: surface,
-        selectedColor: surfaceSoft,
-        side: const BorderSide(color: border),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        backgroundColor: card,
+        selectedColor: soft,
+        side: BorderSide(color: borderColor),
+        labelStyle: TextStyle(color: foreground),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(999),
+        ),
       ),
-      navigationBarTheme: const NavigationBarThemeData(
-        backgroundColor: surface,
-        indicatorColor: surfaceSoft,
-        height: 70,
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: card,
+        indicatorColor: soft,
+        labelTextStyle: WidgetStatePropertyAll(
+          TextStyle(color: foreground),
+        ),
+        height: 72,
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: surface,
+        backgroundColor: card,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
       ),
-      dividerTheme: const DividerThemeData(color: border, thickness: 1),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: card,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dividerTheme: DividerThemeData(
+        color: borderColor,
+        thickness: 1,
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: text,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: scheme.brightness == Brightness.dark
+            ? const Color(0xffe7efe9)
+            : text,
+        contentTextStyle: TextStyle(
+          color: scheme.brightness == Brightness.dark
+              ? const Color(0xff172019)
+              : Colors.white,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
     );
   }

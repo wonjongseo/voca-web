@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ads/ads_controller.dart';
 import 'config/firebase_config.dart';
 import 'state/leafy_controller.dart';
+import 'state/theme_controller.dart';
 import 'ui/app_theme.dart';
 import 'ui/home_screen.dart';
 
@@ -66,6 +67,7 @@ Future<void> main() async {
 
     Get.put<LeafyController>(controller, permanent: true);
     Get.put<AdsController>(ads, permanent: true);
+    Get.put<ThemeController>(ThemeController(preferences), permanent: true);
 
     runApp(LeafyApp(controller: controller, ads: ads));
     unawaited(controller.start());
@@ -109,6 +111,13 @@ class LeafyApp extends StatelessWidget {
     supportedLocales: const [Locale('ko'), Locale('en')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
     theme: LeafyTheme.light(),
+    darkTheme: LeafyTheme.dark(),
+    themeMode: Get.find<ThemeController>().themeMode,
+    builder: (context, child) => GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: child ?? const SizedBox.shrink(),
+    ),
     home: HomeScreen(controller: controller, ads: ads),
   );
 }

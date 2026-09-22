@@ -582,13 +582,24 @@ class _QuizScreenState extends State<QuizScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        const Text(
-          '괄호 안 설명은 입력하지 않아도 돼요. 쉼표, 세미콜론 또는 · 로 등록한 표현은 하나씩 맞힐 수 있고, 힌트 사용은 오답 처리되지 않아요.',
-          style: TextStyle(
-            color: LeafyTheme.muted,
-            fontSize: 10,
-            height: 1.5,
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Tooltip(
+            triggerMode: TooltipTriggerMode.tap,
+            preferBelow: false,
+            showDuration: const Duration(seconds: 8),
+            message:
+                '괄호 안 설명은 입력하지 않아도 돼요.\n'
+                '쉼표, 세미콜론 또는 · 로 등록한 표현은 하나씩 맞힐 수 있어요.\n'
+                '힌트 사용은 오답 처리되지 않아요.',
+            child: IconButton(
+              tooltip: '의미 입력 도움말',
+              onPressed: () {},
+              icon: const Icon(
+                Icons.help_outline_rounded,
+              ),
+            ),
           ),
         ),
       ],
@@ -793,6 +804,58 @@ class _QuizScreenState extends State<QuizScreen> {
     });
   }
 
+  Future<void> _showQuizSettings() async {
+    final total = widget.words.length;
+    final current = index >= total ? total : index + 1;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => GetBuilder<LeafyController>(
+        init: widget.controller,
+        global: false,
+        builder: (_) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(modeIcons[widget.mode]),
+                  title: Text(
+                    '${modeNames[widget.mode]} ($current/$total)',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  subtitle: const Text('현재 퀴즈 진행 상태'),
+                ),
+                const Divider(),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(
+                    Icons.volume_up_outlined,
+                  ),
+                  title: const Text(
+                    '정답 확인 후 자동 발음',
+                  ),
+                  subtitle: const Text(
+                    '정답 확인 뒤 현재 단어를 자동으로 읽어줘요.',
+                  ),
+                  value: widget.controller.autoSpeak,
+                  onChanged: (value) async {
+                    await widget.controller.setAutoSpeak(value);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GetBuilder<LeafyController>(
@@ -818,7 +881,7 @@ class _QuizScreenState extends State<QuizScreen> {
         title: Text(modeNames[widget.mode]!),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: 4),
             child: Center(
               child: Text(
                 done
@@ -831,6 +894,14 @@ class _QuizScreenState extends State<QuizScreen> {
               ),
             ),
           ),
+          IconButton(
+            tooltip: '퀴즈 설정',
+            onPressed: _showQuizSettings,
+            icon: const Icon(
+              Icons.settings_outlined,
+            ),
+          ),
+          const SizedBox(width: 6),
         ],
       ),
       body: SafeArea(
@@ -838,7 +909,7 @@ class _QuizScreenState extends State<QuizScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 700),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 42),
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 54),
               children: [
                 if (done) _resultPage(),
                 if (!done) ...[
@@ -850,9 +921,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       backgroundColor: LeafyTheme.surfaceSoft,
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _autoSpeakSetting(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 22),
                   _questionCard(),
                 ],
               ],

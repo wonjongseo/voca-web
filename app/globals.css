@@ -999,3 +999,139 @@
   .auth-card{padding:27px 20px;border-radius:12px}
   .auth-heading h1{font-size:26px}
 }
+
+
+/* DARK_MODE_V18 */
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --green:#87c59b;
+  --line:#314038;
+  --muted:#a3b0a8;
+  background:#101713;
+  color:#e7efe9;
+}
+
+html[data-theme="dark"] body,
+html[data-theme="dark"] .app-shell,
+html[data-theme="dark"] .main-area,
+html[data-theme="dark"] .auth-page{
+  background:#101713;
+  color:#e7efe9;
+}
+
+html[data-theme="dark"] .sidebar,
+html[data-theme="dark"] .topbar,
+html[data-theme="dark"] .word-card,
+html[data-theme="dark"] .summary-strip,
+html[data-theme="dark"] .mode-card,
+html[data-theme="dark"] .auth-card,
+html[data-theme="dark"] dialog,
+html[data-theme="dark"] .cloud-account-popover{
+  background:#18211c;
+  color:#e7efe9;
+  border-color:#314038;
+}
+
+html[data-theme="dark"] .review-band,
+html[data-theme="dark"] .study-note,
+html[data-theme="dark"] .meaning-completed-item,
+html[data-theme="dark"] .feedback,
+html[data-theme="dark"] .csv-import-guide,
+html[data-theme="dark"] .import-preview{
+  background:#1e2a23;
+  color:#e7efe9;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select,
+html[data-theme="dark"] .button,
+html[data-theme="dark"] .choice,
+html[data-theme="dark"] .search,
+html[data-theme="dark"] .word-form input,
+html[data-theme="dark"] .word-form textarea{
+  background:#18211c;
+  color:#e7efe9;
+  border-color:#3a4a40;
+}
+
+html[data-theme="dark"] .button.primary{
+  background:#78b88e;
+  border-color:#78b88e;
+  color:#102018;
+}
+
+html[data-theme="dark"] .nav-item.active,
+html[data-theme="dark"] .tabs button.selected,
+html[data-theme="dark"] .status.known{
+  background:#27382e;
+  color:#a7d9b7;
+}
+
+html[data-theme="dark"] .muted,
+html[data-theme="dark"] .date-label,
+html[data-theme="dark"] .example,
+html[data-theme="dark"] .page-heading p:last-child,
+html[data-theme="dark"] .auth-heading p{
+  color:#a3b0a8;
+}
+
+html[data-theme="dark"] .brand,
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] .word-link{
+  color:#e7efe9;
+}
+
+.theme-toggle{
+  min-width:92px;
+  gap:6px;
+}
+
+.meaning-help-wrap{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+}
+
+.meaning-help-button{
+  width:30px;
+  height:30px;
+  border-radius:999px;
+  display:inline-grid;
+  place-items:center;
+  border:1px solid var(--line);
+  background:transparent;
+  color:var(--muted);
+}
+
+.meaning-help-popover{
+  position:absolute;
+  right:0;
+  bottom:38px;
+  z-index:20;
+  width:min(340px,80vw);
+  padding:12px 14px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#fff;
+  box-shadow:0 12px 34px rgba(20,40,28,.16);
+  color:#53635a;
+  font-size:11px;
+  line-height:1.7;
+}
+
+html[data-theme="dark"] .meaning-help-popover{
+  background:#1b261f;
+  color:#cbd6ce;
+}
+
+@media(max-width:600px){
+  .theme-toggle{
+    min-width:38px;
+    width:38px;
+    padding-inline:0;
+    font-size:0;
+  }
+}
