@@ -48,6 +48,18 @@ class LeafyTheme {
       surface: darkSurface,
       onSurface: darkText,
       outline: darkBorder,
+      outlineVariant: const Color(0xff314238),
+      surfaceContainerLowest: const Color(0xff101713),
+      surfaceContainerLow: const Color(0xff151e19),
+      surfaceContainer: const Color(0xff18211c),
+      surfaceContainerHigh: const Color(0xff1d2922),
+      surfaceContainerHighest: const Color(0xff223128),
+      onSurfaceVariant: const Color(0xffa7b5ac),
+      tertiary: const Color(0xffd9bd7d),
+      tertiaryContainer: const Color(0xff403721),
+      onTertiaryContainer: const Color(0xffffe6a8),
+      errorContainer: const Color(0xff4a2b25),
+      onErrorContainer: const Color(0xffffd9d0),
     );
 
     return _build(

@@ -222,15 +222,15 @@ class _QuizScreenState extends State<QuizScreen> {
           constraints: const BoxConstraints(maxWidth: 390),
           padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
           decoration: BoxDecoration(
-            color: LeafyTheme.surfaceSoft,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.volume_up_outlined,
                 size: 17,
-                color: LeafyTheme.primary,
+                color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 8),
               const Expanded(
@@ -293,8 +293,8 @@ class _QuizScreenState extends State<QuizScreen> {
           children: [
             Text(
               eyebrow,
-              style: const TextStyle(
-                color: LeafyTheme.muted,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -305,7 +305,7 @@ class _QuizScreenState extends State<QuizScreen> {
               title,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: LeafyTheme.text,
+                    color: Theme.of(context).colorScheme.onSurface,
                     height: 1.25,
                   ),
               textAlign: TextAlign.center,
@@ -317,7 +317,7 @@ class _QuizScreenState extends State<QuizScreen> {
               IconButton.filledTonal(
                 onPressed: () => speak(word),
                 tooltip: '영어 발음 듣기',
-                icon: const Icon(Icons.volume_up_rounded),
+                icon: Icon(Icons.volume_up_rounded),
               ),
             const SizedBox(height: 16),
             if (result == null) _answerArea(word),
@@ -353,7 +353,7 @@ class _QuizScreenState extends State<QuizScreen> {
         width: double.infinity,
         child: OutlinedButton.icon(
           onPressed: () => _ui.mutate(() => revealed = true),
-          icon: const Icon(Icons.visibility_outlined),
+          icon: Icon(Icons.visibility_outlined),
           label: const Text('정답 보기'),
         ),
       );
@@ -365,7 +365,7 @@ class _QuizScreenState extends State<QuizScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: LeafyTheme.surfaceSoft,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Column(
@@ -440,7 +440,7 @@ class _QuizScreenState extends State<QuizScreen> {
               labelText: widget.mode == QuizMode.context
                   ? '빈칸에 들어갈 단어'
                   : '영어 단어 입력',
-              prefixIcon: const Icon(Icons.keyboard_outlined),
+              prefixIcon: Icon(Icons.keyboard_outlined),
             ),
           ),
           const SizedBox(height: 12),
@@ -477,15 +477,15 @@ class _QuizScreenState extends State<QuizScreen> {
           children: [
             Text(
               '${completedMeaningKeys.length} / ${meaningItems.length}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w800,
-                color: LeafyTheme.primary,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
             const SizedBox(width: 8),
             const Text(
               '암기 항목 완료',
-              style: TextStyle(color: LeafyTheme.muted, fontSize: 12),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
             ),
           ],
         ),
@@ -497,7 +497,7 @@ class _QuizScreenState extends State<QuizScreen> {
             value: meaningItems.isEmpty
                 ? 0
                 : completedMeaningKeys.length / meaningItems.length,
-            backgroundColor: LeafyTheme.surfaceSoft,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
           ),
         ),
         if (completedMeaningKeys.isNotEmpty) ...[
@@ -508,7 +508,7 @@ class _QuizScreenState extends State<QuizScreen> {
             children: meaningItems
                 .where((item) => completedMeaningKeys.contains(item.key))
                 .map((item) => Chip(
-                      avatar: const Icon(Icons.check_rounded, size: 14),
+                      avatar: Icon(Icons.check_rounded, size: 14),
                       label: Text(item.label),
                     ))
                 .toList(),
@@ -521,13 +521,13 @@ class _QuizScreenState extends State<QuizScreen> {
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                color: const Color(0xfffff8e9),
+                color: Theme.of(context).colorScheme.tertiaryContainer.withValues(alpha: .55),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 '힌트 · ${makeMeaningHint(item.raw)}',
-                style: const TextStyle(
-                  color: LeafyTheme.warning,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.tertiary,
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
@@ -543,7 +543,7 @@ class _QuizScreenState extends State<QuizScreen> {
           onSubmitted: (_) => _submitMeaning(),
           decoration: InputDecoration(
             labelText: '기억나는 표현',
-            prefixIcon: const Icon(
+            prefixIcon: Icon(
               Icons.edit_note_rounded,
             ),
             suffixIcon: Tooltip(
@@ -568,7 +568,7 @@ class _QuizScreenState extends State<QuizScreen> {
           const SizedBox(height: 8),
           Text(
             meaningMessage,
-            style: const TextStyle(fontSize: 12, color: LeafyTheme.muted),
+            style: TextStyle(fontSize: 12, color: LeafyTheme.muted),
           ),
         ],
         const SizedBox(height: 12),
@@ -635,15 +635,15 @@ class _QuizScreenState extends State<QuizScreen> {
           const SizedBox(height: 5),
           Text(
             '이번에 직접 맞힌 항목: ${completedMeaningKeys.length} / ${meaningItems.length}',
-            style: const TextStyle(color: LeafyTheme.muted, fontSize: 12),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
           ),
           if (result == false && missing.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               '맞추지 못한 정답: ${missing.map((item) => item.label).join(', ')}',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: LeafyTheme.warning,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.tertiary,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -654,7 +654,7 @@ class _QuizScreenState extends State<QuizScreen> {
           width: double.infinity,
           child: FilledButton.icon(
             onPressed: saving ? null : _next,
-            icon: const Icon(Icons.arrow_forward_rounded),
+            icon: Icon(Icons.arrow_forward_rounded),
             label: Text(index + 1 == widget.words.length ? '결과 보기' : '다음 단어'),
           ),
         ),
@@ -666,9 +666,9 @@ class _QuizScreenState extends State<QuizScreen> {
         width: double.infinity,
         margin: const EdgeInsets.only(top: 18, bottom: 16),
         decoration: BoxDecoration(
-          color: LeafyTheme.background,
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: LeafyTheme.border),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -680,7 +680,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   const Text(
                     '단어 정보',
                     style: TextStyle(
-                      color: LeafyTheme.muted,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
                     ),
@@ -688,8 +688,8 @@ class _QuizScreenState extends State<QuizScreen> {
                   const Spacer(),
                   Text(
                     word.word,
-                    style: const TextStyle(
-                      color: LeafyTheme.text,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 17,
                       fontWeight: FontWeight.w800,
                     ),
@@ -721,7 +721,7 @@ class _QuizScreenState extends State<QuizScreen> {
                         margin: const EdgeInsets.only(bottom: 7),
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: LeafyTheme.surface,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Column(
@@ -730,14 +730,14 @@ class _QuizScreenState extends State<QuizScreen> {
                             if ((example['text'] ?? '').isNotEmpty)
                               Text(
                                 example['text']!,
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: TextStyle(fontWeight: FontWeight.w700),
                               ),
                             if ((example['translation'] ?? '').isNotEmpty) ...[
                               const SizedBox(height: 3),
                               Text(
                                 example['translation']!,
-                                style: const TextStyle(
-                                  color: LeafyTheme.muted,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   fontSize: 12,
                                 ),
                               ),
@@ -775,15 +775,15 @@ class _QuizScreenState extends State<QuizScreen> {
         decoration: BoxDecoration(
           border: last
               ? null
-              : const Border(top: BorderSide(color: LeafyTheme.border)),
+              : Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               label,
-              style: const TextStyle(
-                color: LeafyTheme.muted,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
               ),
@@ -823,7 +823,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   leading: Icon(modeIcons[widget.mode]),
                   title: Text(
                     '${modeNames[widget.mode]} ($current/$total)',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -832,7 +832,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 const Divider(),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  secondary: const Icon(
+                  secondary: Icon(
                     Icons.volume_up_outlined,
                   ),
                   title: const Text(
@@ -885,8 +885,8 @@ class _QuizScreenState extends State<QuizScreen> {
                 done
                     ? '${widget.words.length}/${widget.words.length}'
                     : '${index + 1}/${widget.words.length}',
-                style: const TextStyle(
-                  color: LeafyTheme.muted,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -895,7 +895,7 @@ class _QuizScreenState extends State<QuizScreen> {
           IconButton(
             tooltip: '퀴즈 설정',
             onPressed: _showQuizSettings,
-            icon: const Icon(
+            icon: Icon(
               Icons.settings_outlined,
             ),
           ),
@@ -916,7 +916,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     child: LinearProgressIndicator(
                       minHeight: 7,
                       value: (index + 1) / widget.words.length,
-                      backgroundColor: LeafyTheme.surfaceSoft,
+                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                     ),
                   ),
                   const SizedBox(height: 22),
@@ -945,14 +945,14 @@ class _QuizScreenState extends State<QuizScreen> {
           Container(
             width: 84,
             height: 84,
-            decoration: const BoxDecoration(
-              color: LeafyTheme.surfaceSoft,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.eco_rounded,
               size: 42,
-              color: LeafyTheme.primary,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
           const SizedBox(height: 20),
@@ -966,7 +966,7 @@ class _QuizScreenState extends State<QuizScreen> {
           const SizedBox(height: 8),
           Text(
             '${widget.words.length}개 중 $correctCount개 정답 · 정답률 $accuracy%',
-            style: const TextStyle(color: LeafyTheme.muted),
+            style: TextStyle(color: LeafyTheme.muted),
           ),
           const SizedBox(height: 26),
           SizedBox(

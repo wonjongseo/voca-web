@@ -69,20 +69,20 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: LeafyTheme.surfaceSoft,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.edit_note_rounded, color: LeafyTheme.primary, size: 30),
+                    Icon(Icons.edit_note_rounded, color: Theme.of(context).colorScheme.primary, size: 30),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         editing
                             ? '단어의 뜻, 예문, 유의어와 메모를 편하게 수정할 수 있어요.'
                             : '단어와 의미만 입력해도 저장할 수 있어요. 나머지는 필요할 때 추가하세요.',
-                        style: const TextStyle(color: LeafyTheme.muted, height: 1.45),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.45),
                       ),
                     ),
                   ],
@@ -173,7 +173,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
               const SizedBox(height: 28),
               FilledButton.icon(
                 onPressed: _save,
-                icon: const Icon(Icons.check_rounded),
+                icon: Icon(Icons.check_rounded),
                 label: Text(editing ? '수정 내용 저장' : '단어 저장'),
                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
               ),

@@ -1199,3 +1199,431 @@ html[data-theme="dark"] .meaning-input-help-button:hover{
     transform:none;
   }
 }
+
+/* DARK_MODE_COMPLETE_V21 */
+html[data-theme="dark"]{
+  --dark-bg:#101713;
+  --dark-surface:#18211c;
+  --dark-surface-2:#1e2a23;
+  --dark-surface-3:#243128;
+  --dark-border:#314038;
+  --dark-border-soft:#29372f;
+  --dark-text:#e7efe9;
+  --dark-muted:#a3b0a8;
+  --dark-primary:#87c59b;
+  --dark-primary-strong:#a7d9b7;
+  --dark-danger:#e2a493;
+  --dark-warning:#d9bd7d;
+}
+
+html[data-theme="dark"] .workspace-label,
+html[data-theme="dark"] .sidebar-bottom p,
+html[data-theme="dark"] .local-indicator,
+html[data-theme="dark"] .eyebrow,
+html[data-theme="dark"] .list-bottom,
+html[data-theme="dark"] footer,
+html[data-theme="dark"] dt{
+  color:var(--dark-muted);
+}
+
+html[data-theme="dark"] .brand-symbol,
+html[data-theme="dark"] .avatar{
+  background:var(--dark-surface-3);
+  color:var(--dark-primary);
+}
+
+html[data-theme="dark"] .nav-item{color:#b5c1b9}
+html[data-theme="dark"] .nav-item:hover{
+  background:#202c25;
+  color:var(--dark-text);
+}
+html[data-theme="dark"] .nav-item.active{
+  background:#27382e;
+  color:var(--dark-primary-strong);
+}
+html[data-theme="dark"] .nav-count{
+  background:#31483a;
+  color:#c7e4d0;
+}
+
+html[data-theme="dark"] .button:hover:not(:disabled){background:#223028}
+html[data-theme="dark"] .button.text-button{color:#b2beb6}
+html[data-theme="dark"] .button.text-button:hover:not(:disabled){
+  background:#223028;
+  color:var(--dark-text);
+}
+html[data-theme="dark"] .button.dark{
+  background:#365d47;
+  border-color:#486e58;
+  color:#fff;
+}
+
+/* 상단 요약 */
+html[data-theme="dark"] .summary-strip{
+  background:var(--dark-surface);
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .summary-strip>div{border-color:var(--dark-border)}
+html[data-theme="dark"] .summary-strip>div>div>span,
+html[data-theme="dark"] .summary-strip small,
+html[data-theme="dark"] small{
+  color:var(--dark-muted);
+}
+html[data-theme="dark"] .summary-strip strong{color:var(--dark-text)}
+html[data-theme="dark"] .stat-icon.green{background:#243b2d;color:#91cda3}
+html[data-theme="dark"] .stat-icon.coral{background:#3a2e28;color:#dfaa91}
+html[data-theme="dark"] .stat-icon.violet{background:#302c3c;color:#bbb0d0}
+html[data-theme="dark"] .stat-icon.yellow{background:#3a3425;color:#dfc176}
+
+/* 오늘의 학습 / 리뷰 */
+html[data-theme="dark"] .review-band{
+  background:#1b2921;
+  color:var(--dark-text);
+}
+html[data-theme="dark"] .review-copy p,
+html[data-theme="dark"] .tiny-label,
+html[data-theme="dark"] .section-title h2 span{
+  color:var(--dark-muted);
+}
+html[data-theme="dark"] .image-caption{
+  background:rgba(24,33,28,.94);
+  border-left-color:#78a888;
+  color:var(--dark-text);
+}
+html[data-theme="dark"] .image-caption span{color:#a9bbae}
+
+/* 필터 / 검색 */
+html[data-theme="dark"] .tabs button{color:#a8b4ac}
+html[data-theme="dark"] .tabs button:hover{background:#202c25}
+html[data-theme="dark"] .tabs button.selected{
+  background:#27382e;
+  color:var(--dark-primary-strong);
+}
+html[data-theme="dark"] .search,
+html[data-theme="dark"] select,
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea{
+  background:var(--dark-surface);
+  color:var(--dark-text);
+  border-color:#3a4a40;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder{color:#7f8e84}
+
+/* 단어 카드 */
+html[data-theme="dark"] .word-card{
+  background:var(--dark-surface);
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .word-card:hover{
+  border-color:#52685a;
+  box-shadow:0 5px 18px rgba(0,0,0,.20);
+}
+html[data-theme="dark"] .status{background:#26302a;color:#acb8b0}
+html[data-theme="dark"] .status.learning{background:#3a3025;color:#d9b98e}
+html[data-theme="dark"] .status.known{background:#27382e;color:#a7d9b7}
+html[data-theme="dark"] .category-badge{
+  background:#26372e;
+  border-color:#385043;
+  color:#acd0b8;
+}
+html[data-theme="dark"] .icon-button{color:#a6b3aa}
+html[data-theme="dark"] .icon-button:hover{
+  background:#243128;
+  color:#dce8df;
+}
+html[data-theme="dark"] .word-footer{border-top-color:var(--dark-border-soft)}
+html[data-theme="dark"] .word-footer>span,
+html[data-theme="dark"] .example{color:var(--dark-muted)}
+html[data-theme="dark"] .empty-state{
+  color:var(--dark-muted);
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .empty-state h3{color:var(--dark-text)}
+
+/* 학습 방식 */
+html[data-theme="dark"] .mode-card{
+  background:var(--dark-surface);
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .mode-card:hover{
+  background:#1e2b23;
+  border-color:#587261;
+}
+html[data-theme="dark"] .mode-card p,
+html[data-theme="dark"] .mode-start{color:var(--dark-muted)}
+html[data-theme="dark"] .mode-icon{background:#263a2e;color:#91cda3}
+html[data-theme="dark"] .mode-card:nth-child(2) .mode-icon{background:#3a3027;color:#d8b187}
+html[data-theme="dark"] .mode-card:nth-child(3) .mode-icon{background:#302d3c;color:#bbb0d0}
+html[data-theme="dark"] .mode-card:nth-child(4) .mode-icon{background:#26353a;color:#a7c5ce}
+html[data-theme="dark"] .mode-card:nth-child(5) .mode-icon{background:#383226;color:#d3b98c}
+html[data-theme="dark"] .study-note{background:#1d2921;color:#a9bbaa}
+
+/* 자동 발음 */
+html[data-theme="dark"] .quiz-audio-setting{
+  background:#1c2821;
+  border-color:var(--dark-border);
+  color:var(--dark-text);
+}
+html[data-theme="dark"] .quiz-audio-setting strong{color:var(--dark-text)}
+html[data-theme="dark"] .quiz-audio-setting p{color:var(--dark-muted)}
+html[data-theme="dark"] .quiz-audio-setting button[aria-checked="true"]{
+  background:#78b88e;
+  border-color:#78b88e;
+  color:#102018;
+}
+
+/* 퀴즈 */
+html[data-theme="dark"] .quiz-top,
+html[data-theme="dark"] .context-translation{color:var(--dark-muted)}
+html[data-theme="dark"] .progress-track,
+html[data-theme="dark"] .meaning-step-progress{background:#2a3830}
+html[data-theme="dark"] .progress-track>div,
+html[data-theme="dark"] .meaning-step-progress>div{background:#78a987}
+
+html[data-theme="dark"] .choice{
+  background:var(--dark-surface);
+  border-color:#3a4a40;
+  color:var(--dark-text);
+}
+html[data-theme="dark"] .choice:hover:not(:disabled){background:#213028}
+html[data-theme="dark"] .choice-number{background:#26342c;color:#afbbb2}
+html[data-theme="dark"] .choice.correct{
+  border-color:#669278;
+  background:#20362a;
+  color:#d9edde;
+}
+html[data-theme="dark"] .choice.incorrect{
+  border-color:#9f6b60;
+  background:#382723;
+  color:#f0d7d0;
+}
+html[data-theme="dark"] .choice-details{
+  border-top-color:#3a4a40;
+  color:#b0bcb4;
+}
+html[data-theme="dark"] .choice-details strong{color:#cfdfd3}
+html[data-theme="dark"] .choice-details .choice-translation{color:#98a69d}
+
+html[data-theme="dark"] .typing-form input,
+html[data-theme="dark"] .meaning-answer-row input,
+html[data-theme="dark"] .meaning-step-input input{
+  background:var(--dark-surface);
+  color:var(--dark-text);
+  border-color:#3a4a40;
+}
+
+html[data-theme="dark"] .feedback{background:#1e3025;color:var(--dark-text)}
+html[data-theme="dark"] .feedback.negative{background:#332621;color:#efd9d2}
+html[data-theme="dark"] .result-icon{background:#253b2d;color:#9bd0a9}
+html[data-theme="dark"] .quiz-result>p{color:var(--dark-muted)}
+html[data-theme="dark"] .quiz-result>strong{color:#9fcdaa}
+
+/* 의미 입력 */
+html[data-theme="dark"] .meaning-answer-row,
+html[data-theme="dark"] .meaning-step-head,
+html[data-theme="dark"] .meaning-step-input,
+html[data-theme="dark"] .meaning-step-note{color:var(--dark-muted)}
+html[data-theme="dark"] .meaning-step-head strong{color:#c7dfce}
+html[data-theme="dark"] .meaning-completed-item{
+  background:#213229;
+  border-color:#385043;
+  color:#b8d9c2;
+}
+html[data-theme="dark"] .meaning-attempt-message{background:#382722;color:#e1aa9b}
+html[data-theme="dark"] .meaning-attempt-message.success{background:#203229;color:#acd1b8}
+html[data-theme="dark"] .meaning-missing-answers{
+  border-color:rgba(226,164,147,.30);
+  background:rgba(132,74,62,.16);
+}
+html[data-theme="dark"] .meaning-missing-answers>strong,
+html[data-theme="dark"] .meaning-missing-answers>p{color:#e0a798}
+html[data-theme="dark"] .meaning-hint-box{
+  background:#1c2922;
+  border-color:#35473c;
+}
+html[data-theme="dark"] .meaning-hint-title>span{color:#b5c8ba}
+html[data-theme="dark"] .meaning-hint-title>small{color:#8e9d93}
+html[data-theme="dark"] .meaning-hint-item{background:#243229;color:#d4dfd7}
+html[data-theme="dark"] .meaning-hint-button{
+  background:#1f2c24;
+  border-color:#3a4b40;
+  color:#bad0bf;
+}
+html[data-theme="dark"] .meaning-hint-button:hover:not(:disabled){background:#293930}
+
+/* 퀴즈 상세 */
+html[data-theme="dark"] .quiz-word-details{
+  background:#17211b;
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .quiz-word-details-head{
+  background:#202c25;
+  border-bottom-color:#33443a;
+}
+html[data-theme="dark"] .quiz-word-details-head>span,
+html[data-theme="dark"] .quiz-word-detail-label,
+html[data-theme="dark"] .quiz-word-example-ko{color:var(--dark-muted)}
+html[data-theme="dark"] .quiz-word-details-head>strong,
+html[data-theme="dark"] .quiz-word-detail-values p,
+html[data-theme="dark"] .quiz-word-memo,
+html[data-theme="dark"] .quiz-word-example-en{color:var(--dark-text)}
+html[data-theme="dark"] .quiz-word-detail-row{border-bottom-color:#2c3b32}
+html[data-theme="dark"] .quiz-word-detail-example,
+html[data-theme="dark"] .quiz-word-synonyms>span,
+html[data-theme="dark"] .quiz-word-category{
+  background:#202c25;
+  border-color:#35473c;
+  color:#c2d5c7;
+}
+
+/* 페이지네이션 */
+html[data-theme="dark"] .word-pagination{
+  background:#17211b;
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .word-pagination button{
+  background:#202c25;
+  border-color:#3a4b40;
+  color:#c4d0c7;
+}
+html[data-theme="dark"] .word-pagination button:hover:not(:disabled):not(.active){
+  background:#2a3a30;
+  border-color:#587060;
+}
+html[data-theme="dark"] .word-pagination button.page-number.active{
+  background:#78b88e;
+  border-color:#78b88e;
+  color:#102018;
+}
+html[data-theme="dark"] .word-pagination button:disabled{
+  color:#748178;
+  background:#18211c;
+  opacity:.55;
+}
+html[data-theme="dark"] .word-pagination-summary,
+html[data-theme="dark"] .word-pagination-current,
+html[data-theme="dark"] .word-pagination span{color:#a8b5ac}
+
+/* 통계 */
+html[data-theme="dark"] .bar-column,
+html[data-theme="dark"] .history-summary span,
+html[data-theme="dark"] .history-list>div>span:not(.history-dot),
+html[data-theme="dark"] .history-list time{color:var(--dark-muted)}
+html[data-theme="dark"] .bar-track{background:#26342c}
+html[data-theme="dark"] .bar{background:#547461}
+html[data-theme="dark"] .bar.today{background:#87b795}
+html[data-theme="dark"] .history-dot{background:#382e26;color:#d6ad86}
+html[data-theme="dark"] .history-dot.success{background:#24372b;color:#99c8a6}
+
+/* 오답노트 */
+html[data-theme="dark"] .wrong-card{
+  background:var(--dark-surface);
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .wrong-card:hover{
+  border-color:#52685a;
+  box-shadow:0 8px 24px rgba(0,0,0,.18);
+}
+html[data-theme="dark"] .wrong-badge{background:#382824;color:#dda395}
+html[data-theme="dark"] .wrong-metrics{border-top-color:#2d3b33}
+html[data-theme="dark"] .wrong-metrics span,
+html[data-theme="dark"] .wrong-metrics small,
+html[data-theme="dark"] .wrong-accuracy-head,
+html[data-theme="dark"] .wrong-card-footer{color:var(--dark-muted)}
+html[data-theme="dark"] .wrong-metrics strong{color:var(--dark-text)}
+html[data-theme="dark"] .wrong-metrics strong.wrong-value{color:#e2a493}
+html[data-theme="dark"] .wrong-progress{background:#3a2c28}
+
+/* dialog / form */
+html[data-theme="dark"] dialog{
+  background:var(--dark-surface);
+  color:var(--dark-text);
+  border-color:var(--dark-border);
+}
+html[data-theme="dark"] .word-form label{color:#b1bdb5}
+html[data-theme="dark"] .reuse-category-option{
+  background:#1c2821;
+  border-color:#35453b;
+  color:#b8c5bc!important;
+}
+html[data-theme="dark"] .reuse-category-option small{color:#91a097}
+html[data-theme="dark"] .category-row{
+  background:var(--dark-surface);
+  border-bottom-color:var(--dark-border);
+}
+html[data-theme="dark"] .category-row span,
+html[data-theme="dark"] .category-empty{color:var(--dark-muted)}
+html[data-theme="dark"] .category-empty{border-color:#3a4a40}
+
+/* CSV */
+html[data-theme="dark"] .csv-import-guide,
+html[data-theme="dark"] .import-preview{
+  background:#19241e;
+  border-color:var(--dark-border);
+  color:var(--dark-text);
+}
+html[data-theme="dark"] .csv-import-guide-title,
+html[data-theme="dark"] .csv-import-example>div{color:#c5d3c9}
+html[data-theme="dark"] .csv-import-guide code{
+  background:#202c25;
+  color:#dce6df;
+  border-color:#35453b;
+}
+html[data-theme="dark"] .csv-import-guide-notes{color:var(--dark-muted)}
+
+/* 로그인 / 클라우드 */
+html[data-theme="dark"] .auth-back,
+html[data-theme="dark"] .auth-form label,
+html[data-theme="dark"] .auth-divider,
+html[data-theme="dark"] .auth-switch,
+html[data-theme="dark"] .cloud-account-email,
+html[data-theme="dark"] .cloud-scope label,
+html[data-theme="dark"] .cloud-disabled{color:var(--dark-muted)}
+html[data-theme="dark"] .auth-back:hover,
+html[data-theme="dark"] .auth-switch button{color:var(--dark-primary)}
+html[data-theme="dark"] .auth-divider::before,
+html[data-theme="dark"] .auth-divider::after{background:#314038}
+html[data-theme="dark"] .cloud-account-popover-head{border-bottom-color:var(--dark-border)}
+html[data-theme="dark"] .cloud-account-trigger{
+  background:#1c2720;
+  border-color:#35473c;
+  color:#b7c7bb;
+}
+html[data-theme="dark"] .cloud-account-trigger:hover,
+html[data-theme="dark"] .cloud-account-menu[open] .cloud-account-trigger{
+  background:#26372e;
+  border-color:#4b6656;
+  color:#d4e3d8;
+}
+html[data-theme="dark"] .cloud-account-popover-head strong{color:var(--dark-text)}
+html[data-theme="dark"] .cloud-login input,
+html[data-theme="dark"] .cloud-scope input:not([type="radio"]){
+  background:#202c25;
+  color:var(--dark-text);
+  border-color:#3a4a40;
+}
+html[data-theme="dark"] .cloud-disabled code{background:#26342c;color:#c9d6cd}
+
+/* 경고 */
+html[data-theme="dark"] .error-banner{
+  background:#382721;
+  color:#e4ad9d;
+  border-color:#69483f;
+}
+html[data-theme="dark"] .danger{color:#e1a193;border-color:#65473f}
+html[data-theme="dark"] .toast{background:#dce9df;color:#162119}
+
+/* help */
+html[data-theme="dark"] .meaning-help-popover{
+  background:#1b261f;
+  border-color:#35453b;
+  color:#cbd6ce;
+}
+html[data-theme="dark"] .meaning-input-help-button{color:#a7b5ac}
+html[data-theme="dark"] .meaning-input-help-button:hover{
+  background:#26342c;
+  color:#dce8df;
+}
+/* END_DARK_MODE_COMPLETE_V21 */
+

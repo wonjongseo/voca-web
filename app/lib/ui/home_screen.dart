@@ -150,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      backgroundColor: LeafyTheme.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       builder: (context) => SafeArea(
         child: Padding(
           padding: EdgeInsets.fromLTRB(
@@ -175,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     IconButton.filledTonal(
                       onPressed: () =>
                           action(() => speech.speak(word.word, c.accent)),
-                      icon: const Icon(Icons.volume_up_rounded),
+                      icon: Icon(Icons.volume_up_rounded),
                     ),
                   ],
                 ),
@@ -197,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: LeafyTheme.background,
+                        color: Theme.of(context).colorScheme.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Column(
@@ -206,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           if ((example['text'] ?? '').isNotEmpty)
                             Text(
                               example['text']!,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -214,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 4),
                             Text(
                               example['translation']!,
-                              style: const TextStyle(color: LeafyTheme.muted),
+                              style: TextStyle(color: LeafyTheme.muted),
                             ),
                           ],
                         ],
@@ -273,12 +273,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: LeafyTheme.surfaceSoft,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(11),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.eco_rounded,
-                        color: LeafyTheme.primary,
+                        color: Theme.of(context).colorScheme.primary,
                         size: 21,
                       ),
                     ),
@@ -293,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   IconButton(
                     onPressed: c.busy ? null : c.refreshScope,
                     tooltip: '클라우드에서 새로고침',
-                    icon: const Icon(Icons.sync_rounded),
+                    icon: Icon(Icons.sync_rounded),
                   ),
                   IconButton(
                     onPressed: () => _ui.mutate(() => tab = 4),
@@ -312,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (c.busy) const LinearProgressIndicator(minHeight: 2),
                   if (c.error != null)
                     MaterialBanner(
-                      backgroundColor: const Color(0xfffff4ec),
+                      backgroundColor: Theme.of(context).colorScheme.errorContainer,
                       content: Text(c.error!),
                       actions: [
                         TextButton(
@@ -356,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
               floatingActionButton: tab == 0 && c.loaded
                   ? FloatingActionButton.extended(
                       onPressed: c.busy ? null : () => edit(),
-                      icon: const Icon(Icons.add_rounded),
+                      icon: Icon(Icons.add_rounded),
                       label: const Text('단어 추가'),
                     )
                   : null,
@@ -421,7 +421,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 4),
               Text(
                 subtitles[tab],
-                style: const TextStyle(color: LeafyTheme.muted),
+                style: TextStyle(color: LeafyTheme.muted),
               ),
             ],
           ),
@@ -429,13 +429,13 @@ class _HomeScreenState extends State<HomeScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
-            color: LeafyTheme.surfaceSoft,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
             cloudLabel,
-            style: const TextStyle(
-              color: LeafyTheme.primaryDark,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
@@ -537,12 +537,12 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   '${words.length}개의 단어',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 if (wrongOnly)
                   const Text(
                     '3연속 정답 시 오답노트 졸업',
-                    style: TextStyle(color: LeafyTheme.muted, fontSize: 11),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11),
                   ),
               ],
             ),
@@ -550,7 +550,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (wrongOnly && words.isNotEmpty)
             TextButton.icon(
               onPressed: c.busy ? null : _resetWrongNotebook,
-              icon: const Icon(Icons.restart_alt_rounded, size: 18),
+              icon: Icon(Icons.restart_alt_rounded, size: 18),
               label: const Text('초기화'),
             ),
         ],
@@ -592,15 +592,15 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: effectivePage <= 1
                   ? null
                   : () => _ui.mutate(() => wordPage = effectivePage - 1),
-              icon: const Icon(Icons.chevron_left_rounded),
+              icon: Icon(Icons.chevron_left_rounded),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 '$effectivePage / $pageCount',
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: LeafyTheme.muted,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -609,7 +609,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: effectivePage >= pageCount
                   ? null
                   : () => _ui.mutate(() => wordPage = effectivePage + 1),
-              icon: const Icon(Icons.chevron_right_rounded),
+              icon: Icon(Icons.chevron_right_rounded),
             ),
           ],
         ),
@@ -646,8 +646,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           word.meanings.join(' · '),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: LeafyTheme.muted,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                             height: 1.45,
                           ),
                         ),
@@ -657,7 +657,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   IconButton(
                     onPressed: () =>
                         action(() => speech.speak(word.word, c.accent)),
-                    icon: const Icon(Icons.volume_up_outlined),
+                    icon: Icon(Icons.volume_up_outlined),
                   ),
                   IconButton(
                     onPressed: c.busy
@@ -692,8 +692,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   word.examples.first['text']!,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: LeafyTheme.muted,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 12,
                     fontStyle: FontStyle.italic,
                   ),
@@ -731,7 +731,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _badge(String text, IconData icon) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
     decoration: BoxDecoration(
-      color: LeafyTheme.surfaceSoft,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
     ),
     child: Row(
@@ -741,8 +741,8 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(width: 4),
         Text(
           text,
-          style: const TextStyle(
-            color: LeafyTheme.primaryDark,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
             fontSize: 10,
             fontWeight: FontWeight.w700,
           ),
@@ -785,7 +785,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: LeafyTheme.primaryDark,
+        color: Theme.of(context).colorScheme.primary,
         borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
@@ -801,7 +801,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 4),
                 Text(
                   '${c.due.length}개 단어가 복습을 기다리고 있어요.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -810,14 +810,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const Icon(Icons.spa_rounded, color: Colors.white, size: 36),
+          Icon(Icons.spa_rounded, color: Colors.white, size: 36),
         ],
       ),
     ),
     const SizedBox(height: 14),
     Card(
       child: SwitchListTile(
-        secondary: const Icon(Icons.volume_up_outlined),
+        secondary: Icon(Icons.volume_up_outlined),
         title: const Text(
           '정답 확인 후 자동 발음',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
@@ -904,17 +904,17 @@ class _HomeScreenState extends State<HomeScreen> {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: LeafyTheme.surfaceSoft,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(modeIcons[mode], color: LeafyTheme.primary),
         ),
         title: Text(
           modeNames[mode]!,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
         subtitle: Text(descriptions[mode]!),
-        trailing: const Icon(Icons.chevron_right_rounded),
+        trailing: Icon(Icons.chevron_right_rounded),
         enabled: !c.busy && c.loaded,
         onTap: () => _startQuiz(mode),
       ),
@@ -997,9 +997,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: Text(day),
                 trailing: Text(
                   '$count회',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: LeafyTheme.primary,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
@@ -1016,11 +1016,11 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Text(
             value,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
           ),
           Text(
             label,
-            style: const TextStyle(color: LeafyTheme.muted, fontSize: 10),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 10),
           ),
         ],
       ),
@@ -1036,19 +1036,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       if (c.auth != null && c.user == null) ...[
         ListTile(
-          leading: const Icon(Icons.mail_outline_rounded),
+          leading: Icon(Icons.mail_outline_rounded),
           title: const Text('이메일 로그인 / 회원가입'),
           onTap: c.busy ? null : login,
         ),
         ListTile(
-          leading: const Icon(Icons.login_rounded),
+          leading: Icon(Icons.login_rounded),
           title: const Text('Google 로그인'),
           onTap: c.busy ? null : () => action(c.googleSignIn),
         ),
       ],
       if (c.user != null) ...[
         ListTile(
-          leading: const CircleAvatar(
+          leading: CircleAvatar(
             backgroundColor: LeafyTheme.surfaceSoft,
             child: Icon(Icons.person_rounded, color: LeafyTheme.primary),
           ),
@@ -1057,7 +1057,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () => Clipboard.setData(ClipboardData(text: c.user!.uid)),
         ),
         ListTile(
-          leading: const Icon(Icons.logout_rounded),
+          leading: Icon(Icons.logout_rounded),
           title: const Text('로그아웃'),
           onTap: c.busy ? null : () => action(c.signOut),
         ),
@@ -1068,12 +1068,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _section('그룹 단어장', Icons.group_outlined, [
         ListTile(
           title: const Text('내 단어장으로 전환'),
-          leading: const Icon(Icons.person_outline_rounded),
+          leading: Icon(Icons.person_outline_rounded),
           onTap: c.busy ? null : () => c.selectScope(null),
         ),
         ListTile(
           title: const Text('새 그룹 만들기'),
-          leading: const Icon(Icons.group_add_outlined),
+          leading: Icon(Icons.group_add_outlined),
           onTap: c.busy
               ? null
               : () async {
@@ -1083,7 +1083,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         ListTile(
           title: const Text('그룹 열기'),
-          leading: const Icon(Icons.folder_open_outlined),
+          leading: Icon(Icons.folder_open_outlined),
           onTap: c.busy
               ? null
               : () async {
@@ -1101,7 +1101,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             title: const Text('멤버 추가'),
-            leading: const Icon(Icons.person_add_alt_1_rounded),
+            leading: Icon(Icons.person_add_alt_1_rounded),
             onTap: c.busy
                 ? null
                 : () async {
@@ -1181,7 +1181,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const SizedBox(height: 14),
     _section('단어장 관리', Icons.inventory_2_outlined, [
       ListTile(
-        leading: const Icon(Icons.create_new_folder_outlined),
+        leading: Icon(Icons.create_new_folder_outlined),
         title: const Text('카테고리 추가'),
         onTap: c.busy || !c.loaded
             ? null
@@ -1195,12 +1195,12 @@ class _HomeScreenState extends State<HomeScreen> {
               },
       ),
       ListTile(
-        leading: const Icon(Icons.upload_file_rounded),
+        leading: Icon(Icons.upload_file_rounded),
         title: const Text('웹 단어장 CSV 가져오기'),
         onTap: c.busy || !c.loaded ? null : _importCsv,
       ),
       ListTile(
-        leading: const Icon(Icons.download_rounded),
+        leading: Icon(Icons.download_rounded),
         title: const Text('CSV 내보내기'),
         onTap: c.book.words.isEmpty
             ? null
@@ -1208,7 +1208,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       if (widget.ads.privacyRequired)
         ListTile(
-          leading: const Icon(Icons.privacy_tip_outlined),
+          leading: Icon(Icons.privacy_tip_outlined),
           title: const Text('광고 개인정보 설정'),
           onTap: () => action(widget.ads.privacyOptions),
         ),
@@ -1217,7 +1217,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const Text(
       'Leafy · 작은 단어가 만드는 큰 변화',
       textAlign: TextAlign.center,
-      style: TextStyle(color: LeafyTheme.muted, fontSize: 11),
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11),
     ),
   ];
 
@@ -1233,7 +1233,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                  style: TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -1276,7 +1276,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               FilledButton.icon(
                 onPressed: () => Navigator.pop(context, true),
-                icon: const Icon(Icons.upload_file_rounded),
+                icon: Icon(Icons.upload_file_rounded),
                 label: const Text('CSV 파일 선택'),
               ),
             ],
@@ -1370,12 +1370,12 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
       child: Column(
         children: [
-          Icon(icon, color: LeafyTheme.primary, size: 36),
+          Icon(icon, color: Theme.of(context).colorScheme.primary, size: 36),
           const SizedBox(height: 12),
           Text(
             text,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: LeafyTheme.muted),
+            style: TextStyle(color: LeafyTheme.muted),
           ),
         ],
       ),
@@ -1392,7 +1392,7 @@ class _MiniTitle extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 10),
     child: Text(
       text,
-      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
     ),
   );
 }
