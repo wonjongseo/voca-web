@@ -20,6 +20,8 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
+  where,
   writeBatch,
   type DocumentReference,
 } from 'firebase/firestore';
@@ -51,7 +53,13 @@ export type CloudScope =
   | {type:'group';groupId:string};
 
 const REVIEW_STORAGE_VERSION=3;
+const CLOUD_SYNC_OVERLAP_MS=5000;
 const groupMembershipCache=new Set<string>();
+
+export type CloudLoadResult={
+  database:Database;
+  cursorMs:number;
+};
 
 type StoredReview = Review & {id?:string};
 type CloudWordData = Word & {
@@ -177,6 +185,7 @@ function wordFromCloudData(data:Record<string,unknown>):Word {
     _reviewEvents:_ignoredReviews,
     updatedAt:_ignoredUpdatedAt,
     updatedBy:_ignoredUpdatedBy,
+    deleted:_ignoredDeleted,
     ...word
   }=data;
 
@@ -329,8 +338,14 @@ export async function syncCloudDatabase(
 
   for(const previousWord of previous.words) {
     if(!nextWords.has(previousWord.id)) {
-      writes.push(batch=>batch.delete(
+      writes.push(batch=>batch.set(
         doc(rootRef,'words',previousWord.id),
+        {
+          deleted:true,
+          updatedAt:serverTimestamp(),
+          updatedBy:user.uid,
+        },
+        {merge:true},
       ));
     }
   }
@@ -355,6 +370,7 @@ export async function syncCloudDatabase(
       ...cleanWordForCloud(nextWord),
       updatedAt:serverTimestamp(),
       updatedBy:user.uid,
+      deleted:false,
     };
 
     if(!previousWord||removedEvent) {
@@ -397,19 +413,12 @@ export async function syncCloudDatabase(
 }
 
 /**
- * Full cloud load.
- *
- * Normal schema v3 reads only:
- *   1 root document + N word documents.
- *
- * The legacy reviews collection is read only once, during migration from
- * the old schema. Legacy documents are intentionally left in place to avoid
- * charging deletes; reviewStorageVersion prevents them from being read again.
+ * Full cloud load + server updatedAt cursor.
  */
-export async function loadCloudDatabase(
+export async function loadCloudDatabaseWithCursor(
   user:User,
   scope:CloudScope,
-):Promise<Database> {
+):Promise<CloudLoadResult> {
   if(!firestore)throw new Error('Firebase 설정이 필요합니다.');
 
   if(scope.type==='group') {
@@ -421,84 +430,154 @@ export async function loadCloudDatabase(
 
   const [rootSnap,wordSnap]=await Promise.all([
     getDoc(rootRef),
-    getDocs(query(
-      collection(rootRef,'words'),
-      orderBy('created','desc'),
-    )),
+    getDocs(query(collection(rootRef,'words'),orderBy('created','desc'))),
   ]);
 
   const rootData=rootSnap.data() as
     | (Partial<Database> & {reviewStorageVersion?:number})
     | undefined;
 
-  const cloudWordData=wordSnap.docs.map(item=>({
+  const all=wordSnap.docs.map(item=>({
     id:item.id,
     data:item.data() as Record<string,unknown>,
   }));
 
-  const words=cloudWordData.map(item=>wordFromCloudData(item.data));
+  const active=all.filter(item=>item.data.deleted!==true);
+  const words=active.map(item=>wordFromCloudData({...item.data,id:item.id}));
 
   const storedCategories=Array.isArray(rootData?.categories)
-    ?rootData.categories.filter(
-      (item):item is string=>typeof item==='string',
-    )
+    ?rootData.categories.filter((item):item is string=>typeof item==='string')
     :[];
 
   const categories=[...new Set([
     ...storedCategories,
-    ...words
-      .map(word=>(word.category??'').trim())
-      .filter(Boolean),
+    ...words.map(word=>(word.category??'').trim()).filter(Boolean),
   ])];
 
-  if(rootData?.reviewStorageVersion===REVIEW_STORAGE_VERSION) {
-    const reviews=cloudWordData.flatMap(item=>
-      reviewsFromCloudWord(item.data,item.id),
-    );
+  const cursorMs=all.reduce((max,item)=>{
+    const value=item.data.updatedAt;
+    return value instanceof Timestamp?Math.max(max,value.toMillis()):max;
+  },0);
 
+  if(rootData?.reviewStorageVersion===REVIEW_STORAGE_VERSION) {
     return {
-      version:1,
-      categories,
-      words,
-      reviews,
+      database:{
+        version:1,
+        categories,
+        words,
+        reviews:active.flatMap(item=>reviewsFromCloudWord(item.data,item.id)),
+      },
+      cursorMs,
     };
   }
 
-  // One-time compatibility migration from the old reviews subcollection.
   const legacySnap=await getDocs(collection(rootRef,'reviews'));
-  const legacyReviews=legacySnap.docs
-    .map((item,readIndex)=>{
-      const review=item.data() as Review;
-      const suffix=Number(item.id.split('-').at(-1));
-      return {
-        review:{
-          ...review,
-          id:`legacy:${item.id}`,
-        } as StoredReview,
-        readIndex,
-        legacyIndex:Number.isFinite(suffix)?suffix:readIndex,
-      };
-    })
-    .sort((a,b)=>
-      a.review.date.localeCompare(b.review.date) ||
-      a.legacyIndex-b.legacyIndex ||
-      a.readIndex-b.readIndex
-    )
-    .map(item=>item.review);
+  const legacyReviews=legacySnap.docs.map((item,readIndex)=>{
+    const review=item.data() as Review;
+    const suffix=Number(item.id.split('-').at(-1));
+    return {
+      review:{...review,id:`legacy:${item.id}`} as StoredReview,
+      readIndex,
+      legacyIndex:Number.isFinite(suffix)?suffix:readIndex,
+    };
+  }).sort((a,b)=>
+    a.review.date.localeCompare(b.review.date) ||
+    a.legacyIndex-b.legacyIndex ||
+    a.readIndex-b.readIndex
+  ).map(item=>item.review);
 
-  await migrateLegacyReviews(
-    rootRef,
-    user,
-    words,
-    legacyReviews,
-  );
+  await migrateLegacyReviews(rootRef,user,words,legacyReviews);
 
   return {
-    version:1,
-    categories,
-    words,
-    reviews:legacyReviews,
+    database:{version:1,categories,words,reviews:legacyReviews},
+    cursorMs,
   };
+}
+
+export async function loadCloudDatabaseChanges(
+  user:User,
+  scope:CloudScope,
+  base:Database,
+  sinceMs:number,
+):Promise<CloudLoadResult> {
+  if(!firestore)throw new Error('Firebase 설정이 필요합니다.');
+
+  if(scope.type==='group') {
+    await ensureGroupMember(user.uid,scope.groupId,user.email);
+  }
+
+  const [rootCollection,rootId]=rootPath(user.uid,scope);
+  const rootRef=doc(firestore,rootCollection,rootId);
+  const threshold=Timestamp.fromMillis(
+    Math.max(0,sinceMs-CLOUD_SYNC_OVERLAP_MS),
+  );
+
+  const [rootSnap,changedSnap]=await Promise.all([
+    getDoc(rootRef),
+    getDocs(query(
+      collection(rootRef,'words'),
+      where('updatedAt','>',threshold),
+      orderBy('updatedAt','asc'),
+    )),
+  ]);
+
+  const wordsById=new Map(base.words.map(word=>[word.id,word]));
+  const reviewsByWord=new Map<string,Database['reviews']>();
+
+  for(const review of base.reviews){
+    const list=reviewsByWord.get(review.wordId)??[];
+    list.push(review);
+    reviewsByWord.set(review.wordId,list);
+  }
+
+  let cursorMs=sinceMs;
+
+  for(const item of changedSnap.docs){
+    const data=item.data() as Record<string,unknown>;
+    const updatedAt=data.updatedAt;
+    if(updatedAt instanceof Timestamp){
+      cursorMs=Math.max(cursorMs,updatedAt.toMillis());
+    }
+
+    if(data.deleted===true){
+      wordsById.delete(item.id);
+      reviewsByWord.delete(item.id);
+      continue;
+    }
+
+    wordsById.set(item.id,wordFromCloudData({...data,id:item.id}));
+    reviewsByWord.set(item.id,reviewsFromCloudWord(data,item.id));
+  }
+
+  const words=[...wordsById.values()]
+    .sort((a,b)=>(b.created??0)-(a.created??0));
+
+  const rootData=rootSnap.data() as Partial<Database>|undefined;
+  const storedCategories=Array.isArray(rootData?.categories)
+    ?rootData.categories.filter((item):item is string=>typeof item==='string')
+    :[];
+
+  const categories=[...new Set([
+    ...storedCategories,
+    ...words.map(word=>(word.category??'').trim()).filter(Boolean),
+  ])];
+
+  return {
+    database:{
+      version:1,
+      categories,
+      words,
+      reviews:[...reviewsByWord.values()].flat(),
+    },
+    cursorMs,
+  };
+}
+
+export async function loadCloudDatabase(
+  user:User,
+  scope:CloudScope,
+):Promise<Database> {
+  return (await loadCloudDatabaseWithCursor(user,scope)).database;
 }
 
 /**

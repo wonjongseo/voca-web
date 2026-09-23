@@ -6,6 +6,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/vocabulary.dart';
 
 const _reviewStorageVersion = 3;
+const _syncOverlapMs = 5000;
+
+class CloudLoadResult {
+  const CloudLoadResult({
+    required this.notebook,
+    required this.cursorMs,
+  });
+
+  final Notebook notebook;
+  final int cursorMs;
+}
+
 
 abstract class NotebookRepository {
   Future<Notebook> load();
@@ -181,6 +193,7 @@ class CloudRepository implements NotebookRepository {
       ...word.toJson(),
       'updatedAt': FieldValue.serverTimestamp(),
       'updatedBy': uid,
+      'deleted': false,
     };
 
     if (reviewEvents != null) {
@@ -196,7 +209,8 @@ class CloudRepository implements NotebookRepository {
     final data = Map<String, dynamic>.from(doc.data())
       ..remove('_reviewEvents')
       ..remove('updatedAt')
-      ..remove('updatedBy');
+      ..remove('updatedBy')
+      ..remove('deleted');
     return VocabWord({...data, 'id': doc.id});
   }
 
@@ -232,6 +246,151 @@ class CloudRepository implements NotebookRepository {
     }
 
     return result;
+  }
+
+  int _maxCursorMs(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs, [
+    int fallback = 0,
+  ]) {
+    var cursor = fallback;
+    for (final doc in docs) {
+      final value = doc.data()['updatedAt'];
+      if (value is Timestamp && value.millisecondsSinceEpoch > cursor) {
+        cursor = value.millisecondsSinceEpoch;
+      }
+    }
+    return cursor;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _loadChangedWordDocs(int sinceMs) async {
+    final safeMs = sinceMs > _syncOverlapMs ? sinceMs - _syncOverlapMs : 0;
+    final threshold = Timestamp.fromMillisecondsSinceEpoch(safeMs);
+
+    final result = await root
+        .collection('words')
+        .where('updatedAt', isGreaterThan: threshold)
+        .orderBy('updatedAt')
+        .get();
+
+    return result.docs;
+  }
+
+  Notebook _mergeChangedDocs(
+    Notebook base,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    List<String> rootCategories,
+  ) {
+    final words = <String, VocabWord>{
+      for (final word in base.words) word.id: word,
+    };
+
+    final reviews = <String, List<Map<String, dynamic>>>{};
+    for (final review in base.reviews) {
+      final wordId = '${review['wordId'] ?? ''}';
+      if (wordId.isEmpty) continue;
+      reviews.putIfAbsent(wordId, () => []).add(review);
+    }
+
+    for (final doc in docs) {
+      final data = doc.data();
+      if (data['deleted'] == true) {
+        words.remove(doc.id);
+        reviews.remove(doc.id);
+        continue;
+      }
+
+      words[doc.id] = _wordFromDoc(doc);
+      reviews[doc.id] = _reviewsFromWordDoc(doc);
+    }
+
+    final mergedWords = words.values.toList()
+      ..sort((a, b) => b.created.compareTo(a.created));
+
+    final categories = <String>{
+      ...rootCategories,
+      ...mergedWords
+          .map((word) => word.category)
+          .where((value) => value.isNotEmpty),
+    }.toList()
+      ..sort();
+
+    return Notebook(
+      words: mergedWords,
+      reviews: reviews.values.expand((items) => items).toList(),
+      categories: categories,
+    );
+  }
+
+  Future<CloudLoadResult> loadFullWithCursor() async {
+    final metadataFuture = root.get();
+    final wordsFuture = _loadWordDocs();
+
+    final metadata = await metadataFuture;
+    final wordDocs = await wordsFuture;
+    final activeDocs =
+        wordDocs.where((doc) => doc.data()['deleted'] != true).toList();
+    final words = activeDocs.map(_wordFromDoc).toList();
+
+    final storedCategories = (metadata.data()?['categories'] as List? ?? const [])
+        .whereType<String>()
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+
+    final categories = <String>{
+      ...storedCategories,
+      ...words.map((word) => word.category).where((value) => value.isNotEmpty),
+    }.toList()
+      ..sort();
+
+    final storageVersion =
+        (metadata.data()?['reviewStorageVersion'] as num?)?.toInt();
+
+    if (storageVersion == _reviewStorageVersion) {
+      return CloudLoadResult(
+        notebook: Notebook(
+          words: words,
+          reviews: activeDocs.expand(_reviewsFromWordDoc).toList(),
+          categories: categories,
+        ),
+        cursorMs: _maxCursorMs(wordDocs),
+      );
+    }
+
+    final legacyReviews = await _loadLegacyReviews();
+    await _migrateLegacyReviews(words, legacyReviews);
+
+    return CloudLoadResult(
+      notebook: Notebook(
+        words: words,
+        reviews: legacyReviews,
+        categories: categories,
+      ),
+      cursorMs: _maxCursorMs(wordDocs),
+    );
+  }
+
+  Future<CloudLoadResult> loadChangesSince(
+    Notebook base,
+    int sinceMs,
+  ) async {
+    final metadataFuture = root.get();
+    final changedFuture = _loadChangedWordDocs(sinceMs);
+
+    final metadata = await metadataFuture;
+    final changedDocs = await changedFuture;
+
+    final categories = (metadata.data()?['categories'] as List? ?? const [])
+        .whereType<String>()
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+
+    return CloudLoadResult(
+      notebook: _mergeChangedDocs(base, changedDocs, categories),
+      cursorMs: _maxCursorMs(changedDocs, sinceMs),
+    );
   }
 
   Future<List<Map<String, dynamic>>> _loadLegacyReviews() async {
@@ -314,43 +473,7 @@ class CloudRepository implements NotebookRepository {
 
   @override
   Future<Notebook> load() async {
-    final metadataFuture = root.get();
-    final wordsFuture = _loadWordDocs();
-
-    final metadata = await metadataFuture;
-    final wordDocs = await wordsFuture;
-    final words = wordDocs.map(_wordFromDoc).toList();
-
-    final storedCategories = (metadata.data()?['categories'] as List? ?? const [])
-        .whereType<String>()
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty);
-
-    final categories = <String>{
-      ...storedCategories,
-      ...words.map((word) => word.category).where((value) => value.isNotEmpty),
-    }.toList()
-      ..sort();
-
-    final storageVersion =
-        (metadata.data()?['reviewStorageVersion'] as num?)?.toInt();
-
-    if (storageVersion == _reviewStorageVersion) {
-      return Notebook(
-        words: words,
-        reviews: wordDocs.expand(_reviewsFromWordDoc).toList(),
-        categories: categories,
-      );
-    }
-
-    final legacyReviews = await _loadLegacyReviews();
-    await _migrateLegacyReviews(words, legacyReviews);
-
-    return Notebook(
-      words: words,
-      reviews: legacyReviews,
-      categories: categories,
-    );
+    return (await loadFullWithCursor()).notebook;
   }
 
   @override
@@ -379,7 +502,14 @@ class CloudRepository implements NotebookRepository {
 
   @override
   Future<void> deleteWord(String id) {
-    return root.collection('words').doc(id).delete();
+    return root.collection('words').doc(id).set(
+      {
+        'deleted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': uid,
+      },
+      SetOptions(merge: true),
+    );
   }
 
   @override

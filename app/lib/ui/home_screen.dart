@@ -197,7 +197,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerLow,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Column(
@@ -206,9 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           if ((example['text'] ?? '').isNotEmpty)
                             Text(
                               example['text']!,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                           if ((example['translation'] ?? '').isNotEmpty) ...[
                             const SizedBox(height: 4),
@@ -273,7 +273,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(11),
                       ),
                       child: Icon(
@@ -312,7 +314,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (c.busy) const LinearProgressIndicator(minHeight: 2),
                   if (c.error != null)
                     MaterialBanner(
-                      backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.errorContainer,
                       content: Text(c.error!),
                       actions: [
                         TextButton(
@@ -419,10 +423,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                subtitles[tab],
-                style: TextStyle(color: LeafyTheme.muted),
-              ),
+              Text(subtitles[tab], style: TextStyle(color: LeafyTheme.muted)),
             ],
           ),
         ),
@@ -540,9 +541,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 if (wrongOnly)
-                  const Text(
+                  Text(
                     '3연속 정답 시 오답노트 졸업',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 11,
+                    ),
                   ),
               ],
             ),
@@ -561,25 +565,25 @@ class _HomeScreenState extends State<HomeScreen> {
           wrongOnly
               ? '현재 오답노트에 남아 있는 단어가 없어요.'
               : filter == '즐겨찾기'
-                  ? '즐겨찾기한 단어가 없어요. 별표를 눌러 중요한 단어를 모아보세요.'
-                  : filter == '복습'
-                      ? '지금 복습할 단어가 없어요. 복습 시간이 되면 여기에 표시됩니다.'
-                      : filter == '익숙한 단어'
-                          ? '아직 익숙한 단어가 없어요. 학습을 이어가면 여기에 모입니다.'
-                          : search.trim().isNotEmpty
-                              ? '검색 결과가 없어요. 다른 검색어를 입력해보세요.'
-                              : category != '전체'
-                                  ? '선택한 카테고리에 표시할 단어가 없어요.'
-                                  : '아직 단어가 없어요. 새 단어를 추가하거나 CSV를 가져오세요.',
+              ? '즐겨찾기한 단어가 없어요. 별표를 눌러 중요한 단어를 모아보세요.'
+              : filter == '복습'
+              ? '지금 복습할 단어가 없어요. 복습 시간이 되면 여기에 표시됩니다.'
+              : filter == '익숙한 단어'
+              ? '아직 익숙한 단어가 없어요. 학습을 이어가면 여기에 모입니다.'
+              : search.trim().isNotEmpty
+              ? '검색 결과가 없어요. 다른 검색어를 입력해보세요.'
+              : category != '전체'
+              ? '선택한 카테고리에 표시할 단어가 없어요.'
+              : '아직 단어가 없어요. 새 단어를 추가하거나 CSV를 가져오세요.',
           wrongOnly
               ? Icons.check_circle_outline_rounded
               : filter == '즐겨찾기'
-                  ? Icons.star_border_rounded
-                  : filter == '복습'
-                      ? Icons.schedule_rounded
-                      : filter == '익숙한 단어'
-                          ? Icons.workspace_premium_outlined
-                          : Icons.menu_book_outlined,
+              ? Icons.star_border_rounded
+              : filter == '복습'
+              ? Icons.schedule_rounded
+              : filter == '익숙한 단어'
+              ? Icons.workspace_premium_outlined
+              : Icons.menu_book_outlined,
         ),
       for (final word in pagedWords) _wordCard(word, wrongOnly: wrongOnly),
       if (words.isNotEmpty && pageCount > 1) ...[
@@ -647,7 +651,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             height: 1.45,
                           ),
                         ),
@@ -1020,7 +1026,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Text(
             label,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 10),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 10,
+            ),
           ),
         ],
       ),
@@ -1113,47 +1122,43 @@ class _HomeScreenState extends State<HomeScreen> {
       ]),
     ],
     GetBuilder<ThemeController>(
-      builder: (themeController) => _section(
-        '화면',
-        Icons.palette_outlined,
-        [
-          ListTile(
-            leading: Icon(themeController.icon),
-            title: const Text('테마'),
-            subtitle: Text(themeController.label),
-          ),
-          RadioListTile<LeafyThemePreference>(
-            title: const Text('시스템 설정'),
-            value: LeafyThemePreference.system,
-            groupValue: themeController.preference,
-            onChanged: (value) {
-              if (value != null) {
-                themeController.setPreference(value);
-              }
-            },
-          ),
-          RadioListTile<LeafyThemePreference>(
-            title: const Text('라이트 모드'),
-            value: LeafyThemePreference.light,
-            groupValue: themeController.preference,
-            onChanged: (value) {
-              if (value != null) {
-                themeController.setPreference(value);
-              }
-            },
-          ),
-          RadioListTile<LeafyThemePreference>(
-            title: const Text('다크 모드'),
-            value: LeafyThemePreference.dark,
-            groupValue: themeController.preference,
-            onChanged: (value) {
-              if (value != null) {
-                themeController.setPreference(value);
-              }
-            },
-          ),
-        ],
-      ),
+      builder: (themeController) => _section('화면', Icons.palette_outlined, [
+        ListTile(
+          leading: Icon(themeController.icon),
+          title: const Text('테마'),
+          subtitle: Text(themeController.label),
+        ),
+        RadioListTile<LeafyThemePreference>(
+          title: const Text('시스템 설정'),
+          value: LeafyThemePreference.system,
+          groupValue: themeController.preference,
+          onChanged: (value) {
+            if (value != null) {
+              themeController.setPreference(value);
+            }
+          },
+        ),
+        RadioListTile<LeafyThemePreference>(
+          title: const Text('라이트 모드'),
+          value: LeafyThemePreference.light,
+          groupValue: themeController.preference,
+          onChanged: (value) {
+            if (value != null) {
+              themeController.setPreference(value);
+            }
+          },
+        ),
+        RadioListTile<LeafyThemePreference>(
+          title: const Text('다크 모드'),
+          value: LeafyThemePreference.dark,
+          groupValue: themeController.preference,
+          onChanged: (value) {
+            if (value != null) {
+              themeController.setPreference(value);
+            }
+          },
+        ),
+      ]),
     ),
     const SizedBox(height: 14),
     const SizedBox(height: 14),
@@ -1214,10 +1219,13 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
     ]),
     const SizedBox(height: 26),
-    const Text(
+    Text(
       'Leafy · 작은 단어가 만드는 큰 변화',
       textAlign: TextAlign.center,
-      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11),
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontSize: 11,
+      ),
     ),
   ];
 

@@ -87,14 +87,15 @@ class _QuizScreenState extends State<QuizScreen> {
 
   late final List<List<String>> options = widget.words.map((word) {
     final target = word.meanings.isEmpty ? word.meaning : word.meanings.first;
-    final alternatives = widget.controller.book.words
-        .where((candidate) => candidate.id != word.id)
-        .expand((candidate) => candidate.meanings)
-        .map((meaning) => meaning.trim())
-        .where((meaning) => meaning.isNotEmpty && meaning != target)
-        .toSet()
-        .toList()
-      ..shuffle();
+    final alternatives =
+        widget.controller.book.words
+            .where((candidate) => candidate.id != word.id)
+            .expand((candidate) => candidate.meanings)
+            .map((meaning) => meaning.trim())
+            .where((meaning) => meaning.isNotEmpty && meaning != target)
+            .toSet()
+            .toList()
+          ..shuffle();
 
     return <String>[target, ...alternatives.take(3)]..shuffle();
   }).toList();
@@ -107,7 +108,6 @@ class _QuizScreenState extends State<QuizScreen> {
     _prepareQuestion();
   }
 
-
   void _prepareQuestion() {
     input.clear();
     revealed = false;
@@ -116,7 +116,8 @@ class _QuizScreenState extends State<QuizScreen> {
     completedMeaningKeys.clear();
     hintMeaningKeys.clear();
 
-    meaningItems = index < widget.words.length && widget.mode == QuizMode.meaning
+    meaningItems =
+        index < widget.words.length && widget.mode == QuizMode.meaning
         ? buildMeaningStudyItems(widget.words[index].meanings)
         : const [];
   }
@@ -133,9 +134,9 @@ class _QuizScreenState extends State<QuizScreen> {
       await speech.speak(word.word, widget.controller.accent);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
     }
   }
 
@@ -159,9 +160,9 @@ class _QuizScreenState extends State<QuizScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('채점 결과를 저장하지 못했습니다. $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('채점 결과를 저장하지 못했습니다. $error')));
     } finally {
       if (mounted) _ui.mutate(() => saving = false);
     }
@@ -217,51 +218,51 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   Widget _autoSpeakSetting() => Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 390),
-          padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(14),
+    alignment: Alignment.centerRight,
+    child: Container(
+      constraints: const BoxConstraints(maxWidth: 390),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.volume_up_outlined,
+            size: 17,
+            color: Theme.of(context).colorScheme.primary,
           ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.volume_up_outlined,
-                size: 17,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '정답 확인 후 자동 발음',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                    ),
-                    Text(
-                      '정답 확인 뒤 현재 단어를 들려줘요.',
-                      style: TextStyle(fontSize: 9, color: LeafyTheme.muted),
-                    ),
-                  ],
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '정답 확인 후 자동 발음',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                 ),
-              ),
-              Transform.scale(
-                scale: .75,
-                child: Switch(
-                  value: widget.controller.autoSpeak,
-                  onChanged: (value) async {
-                    await widget.controller.setAutoSpeak(value);
-                    if (mounted) _ui.mutate(() {});
-                  },
+                Text(
+                  '정답 확인 뒤 현재 단어를 들려줘요.',
+                  style: TextStyle(fontSize: 9, color: LeafyTheme.muted),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
+          Transform.scale(
+            scale: .75,
+            child: Switch(
+              value: widget.controller.autoSpeak,
+              onChanged: (value) async {
+                await widget.controller.setAutoSpeak(value);
+                if (mounted) _ui.mutate(() {});
+              },
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _questionCard() {
     final word = currentWord;
@@ -304,10 +305,10 @@ class _QuizScreenState extends State<QuizScreen> {
             Text(
               title,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: Theme.of(context).colorScheme.onSurface,
-                    height: 1.25,
-                  ),
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).colorScheme.onSurface,
+                height: 1.25,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 10),
@@ -428,31 +429,31 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   Widget _typingArea(VocabWord word) => Column(
-        children: [
-          TextField(
-            controller: input,
-            enabled: !saving,
-            autofocus: true,
-            autocorrect: false,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submitTypedAnswer(word),
-            decoration: InputDecoration(
-              labelText: widget.mode == QuizMode.context
-                  ? '빈칸에 들어갈 단어'
-                  : '영어 단어 입력',
-              prefixIcon: Icon(Icons.keyboard_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: saving ? null : () => _submitTypedAnswer(word),
-              child: const Text('정답 확인'),
-            ),
-          ),
-        ],
-      );
+    children: [
+      TextField(
+        controller: input,
+        enabled: !saving,
+        autofocus: true,
+        autocorrect: false,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _submitTypedAnswer(word),
+        decoration: InputDecoration(
+          labelText: widget.mode == QuizMode.context
+              ? '빈칸에 들어갈 단어'
+              : '영어 단어 입력',
+          prefixIcon: Icon(Icons.keyboard_outlined),
+        ),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          onPressed: saving ? null : () => _submitTypedAnswer(word),
+          child: const Text('정답 확인'),
+        ),
+      ),
+    ],
+  );
 
   void _submitTypedAnswer(VocabWord word) {
     final answer = input.text.trim();
@@ -461,14 +462,18 @@ class _QuizScreenState extends State<QuizScreen> {
 
   Widget _meaningArea(VocabWord word) {
     final visibleHints = meaningItems
-        .where((item) =>
-            hintMeaningKeys.contains(item.key) &&
-            !completedMeaningKeys.contains(item.key))
+        .where(
+          (item) =>
+              hintMeaningKeys.contains(item.key) &&
+              !completedMeaningKeys.contains(item.key),
+        )
         .toList();
 
-    final nextHintExists = meaningItems.any((item) =>
-        !completedMeaningKeys.contains(item.key) &&
-        !hintMeaningKeys.contains(item.key));
+    final nextHintExists = meaningItems.any(
+      (item) =>
+          !completedMeaningKeys.contains(item.key) &&
+          !hintMeaningKeys.contains(item.key),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -483,9 +488,12 @@ class _QuizScreenState extends State<QuizScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               '암기 항목 완료',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -497,7 +505,9 @@ class _QuizScreenState extends State<QuizScreen> {
             value: meaningItems.isEmpty
                 ? 0
                 : completedMeaningKeys.length / meaningItems.length,
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest,
           ),
         ),
         if (completedMeaningKeys.isNotEmpty) ...[
@@ -507,10 +517,12 @@ class _QuizScreenState extends State<QuizScreen> {
             runSpacing: 6,
             children: meaningItems
                 .where((item) => completedMeaningKeys.contains(item.key))
-                .map((item) => Chip(
-                      avatar: Icon(Icons.check_rounded, size: 14),
-                      label: Text(item.label),
-                    ))
+                .map(
+                  (item) => Chip(
+                    avatar: Icon(Icons.check_rounded, size: 14),
+                    label: Text(item.label),
+                  ),
+                )
                 .toList(),
           ),
         ],
@@ -521,7 +533,9 @@ class _QuizScreenState extends State<QuizScreen> {
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.tertiaryContainer.withValues(alpha: .55),
+                color: Theme.of(
+                  context,
+                ).colorScheme.tertiaryContainer.withValues(alpha: .55),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -543,9 +557,7 @@ class _QuizScreenState extends State<QuizScreen> {
           onSubmitted: (_) => _submitMeaning(),
           decoration: InputDecoration(
             labelText: '기억나는 표현',
-            prefixIcon: Icon(
-              Icons.edit_note_rounded,
-            ),
+            prefixIcon: Icon(Icons.edit_note_rounded),
             suffixIcon: Tooltip(
               triggerMode: TooltipTriggerMode.tap,
               preferBelow: false,
@@ -556,10 +568,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   '힌트 사용은 오답 처리되지 않아요.',
               child: const Padding(
                 padding: EdgeInsets.all(12),
-                child: Icon(
-                  Icons.help_outline_rounded,
-                  size: 20,
-                ),
+                child: Icon(Icons.help_outline_rounded, size: 20),
               ),
             ),
           ),
@@ -585,8 +594,8 @@ class _QuizScreenState extends State<QuizScreen> {
                 child: Text(
                   nextHintExists
                       ? hintMeaningKeys.isEmpty
-                          ? '힌트 보기'
-                          : '힌트 하나 더'
+                            ? '힌트 보기'
+                            : '힌트 하나 더'
                       : '힌트 확인 완료',
                 ),
               ),
@@ -621,21 +630,24 @@ class _QuizScreenState extends State<QuizScreen> {
         Text(
           widget.mode == QuizMode.meaning
               ? result == true
-                  ? '등록한 모든 의미와 표현을 기억했어요!'
-                  : '아직 외우지 못한 표현이 있어요.'
+                    ? '등록한 모든 의미와 표현을 기억했어요!'
+                    : '아직 외우지 못한 표현이 있어요.'
               : result == true
-                  ? '잘 기억했어요!'
-                  : '다음에 한 번 더 만나봐요.',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              ? '잘 기억했어요!'
+              : '다음에 한 번 더 만나봐요.',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           textAlign: TextAlign.center,
         ),
         if (widget.mode == QuizMode.meaning) ...[
           const SizedBox(height: 5),
           Text(
             '이번에 직접 맞힌 항목: ${completedMeaningKeys.length} / ${meaningItems.length}',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
           if (result == false && missing.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -663,119 +675,121 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   Widget _detailsCard(VocabWord word) => Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(top: 18, bottom: 16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-              child: Row(
-                children: [
-                  const Text(
-                    '단어 정보',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    word.word,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _detailSection(
-              '전체 의미',
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final meaning in word.meanings)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 3),
-                      child: Text(meaning),
-                    ),
-                ],
-              ),
-            ),
-            if (word.examples.isNotEmpty)
-              _detailSection(
-                '예문',
-                Column(
-                  children: [
-                    for (final example in word.examples)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 7),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if ((example['text'] ?? '').isNotEmpty)
-                              Text(
-                                example['text']!,
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            if ((example['translation'] ?? '').isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                example['translation']!,
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                  ],
+    width: double.infinity,
+    margin: const EdgeInsets.only(top: 18, bottom: 16),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+          child: Row(
+            children: [
+              Text(
+                '단어 정보',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            if (word.synonymEntries.isNotEmpty)
-              _detailSection(
-                '유의어',
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: word.synonymEntries
-                      .map((value) => Chip(label: Text(value)))
-                      .toList(),
+              const Spacer(),
+              Text(
+                word.word,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            if (word.text('memo').trim().isNotEmpty)
-              _detailSection('메모', Text(word.text('memo')), last: true),
-          ],
+            ],
+          ),
         ),
-      );
+        _detailSection(
+          '전체 의미',
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final meaning in word.meanings)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text(meaning),
+                ),
+            ],
+          ),
+        ),
+        if (word.examples.isNotEmpty)
+          _detailSection(
+            '예문',
+            Column(
+              children: [
+                for (final example in word.examples)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 7),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if ((example['text'] ?? '').isNotEmpty)
+                          Text(
+                            example['text']!,
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        if ((example['translation'] ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            example['translation']!,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (word.synonymEntries.isNotEmpty)
+          _detailSection(
+            '유의어',
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: word.synonymEntries
+                  .map((value) => Chip(label: Text(value)))
+                  .toList(),
+            ),
+          ),
+        if (word.text('memo').trim().isNotEmpty)
+          _detailSection('메모', Text(word.text('memo')), last: true),
+      ],
+    ),
+  );
 
-  Widget _detailSection(
-    String label,
-    Widget child, {
-    bool last = false,
-  }) =>
+  Widget _detailSection(String label, Widget child, {bool last = false}) =>
       Container(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
         decoration: BoxDecoration(
           border: last
               ? null
-              : Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+              : Border(
+                  top: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -823,24 +837,16 @@ class _QuizScreenState extends State<QuizScreen> {
                   leading: Icon(modeIcons[widget.mode]),
                   title: Text(
                     '${modeNames[widget.mode]} ($current/$total)',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                   subtitle: const Text('현재 퀴즈 진행 상태'),
                 ),
                 const Divider(),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  secondary: Icon(
-                    Icons.volume_up_outlined,
-                  ),
-                  title: const Text(
-                    '정답 확인 후 자동 발음',
-                  ),
-                  subtitle: const Text(
-                    '정답 확인 뒤 현재 단어를 자동으로 읽어줘요.',
-                  ),
+                  secondary: Icon(Icons.volume_up_outlined),
+                  title: const Text('정답 확인 후 자동 발음'),
+                  subtitle: const Text('정답 확인 뒤 현재 단어를 자동으로 읽어줘요.'),
                   value: widget.controller.autoSpeak,
                   onChanged: (value) async {
                     await widget.controller.setAutoSpeak(value);
@@ -875,58 +881,58 @@ class _QuizScreenState extends State<QuizScreen> {
           final done = index >= widget.words.length;
 
           return Scaffold(
-      appBar: AppBar(
-        title: Text(modeNames[widget.mode]!),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Center(
-              child: Text(
-                done
-                    ? '${widget.words.length}/${widget.words.length}'
-                    : '${index + 1}/${widget.words.length}',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
+            appBar: AppBar(
+              title: Text(modeNames[widget.mode]!),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Center(
+                    child: Text(
+                      done
+                          ? '${widget.words.length}/${widget.words.length}'
+                          : '${index + 1}/${widget.words.length}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '퀴즈 설정',
+                  onPressed: _showQuizSettings,
+                  icon: Icon(Icons.settings_outlined),
+                ),
+                const SizedBox(width: 6),
+              ],
+            ),
+            body: SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 700),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(18, 20, 18, 54),
+                    children: [
+                      if (done) _resultPage(),
+                      if (!done) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            minHeight: 7,
+                            value: (index + 1) / widget.words.length,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        _questionCard(),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          IconButton(
-            tooltip: '퀴즈 설정',
-            onPressed: _showQuizSettings,
-            icon: Icon(
-              Icons.settings_outlined,
-            ),
-          ),
-          const SizedBox(width: 6),
-        ],
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 700),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 20, 18, 54),
-              children: [
-                if (done) _resultPage(),
-                if (!done) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      minHeight: 7,
-                      value: (index + 1) / widget.words.length,
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  _questionCard(),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
           );
         },
       ),
@@ -958,9 +964,9 @@ class _QuizScreenState extends State<QuizScreen> {
           const SizedBox(height: 20),
           Text(
             '오늘도 한 걸음 자랐어요.',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),

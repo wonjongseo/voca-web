@@ -8,7 +8,7 @@ import {cleanEntries, getExamples, getMeanings, getSynonyms, blankWord, demoWord
 
 import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from './word-entries';
 import {pronunciationSources} from './lib/pronunciation';
-import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, syncCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
+import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, loadCloudDatabaseChanges, loadCloudDatabaseWithCursor, syncCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
 import type {User} from 'firebase/auth';
 
 type Mode = 'flash'|'choice'|'typing'|'meaningTyping'|'context';
@@ -25,6 +25,7 @@ const LAST_CLOUD_UID_KEY='leaf-last-cloud-uid-v1';
 const LOCAL_ACCOUNT_BACKUP_PREFIX='leaf-local-account-backup-v1'; // CLOUD_SAVE_DURABILITY_V2
 const WORDS_PER_PAGE=24; // WORD_LIST_PAGINATION_V4
 const CLOUD_SESSION_PREFIX='leaf-cloud-session-v1'; // FIRESTORE_COST_OPTIMIZATION_V1
+const CLOUD_CURSOR_PREFIX='leaf-cloud-cursor-v1'; // FIRESTORE_INCREMENTAL_SYNC_V1
 // RELEARNING_FEATURE_V2
 const RELEARNING_STREAK_TARGET=3;
 const RELEARNING_SHARE=.3;
@@ -425,6 +426,25 @@ function cloudScopeKey(uid:string,scope:CloudScope){
 
 function cloudSessionKey(scopeKey:string){
   return `${CLOUD_SESSION_PREFIX}:${scopeKey}`;
+}
+
+function cloudCursorKey(scopeKey:string){
+  return `${CLOUD_CURSOR_PREFIX}:${scopeKey}`;
+}
+
+function readCloudCursor(scopeKey:string){
+  try {
+    const value=Number(localStorage.getItem(cloudCursorKey(scopeKey))||'0');
+    return Number.isFinite(value)&&value>0?value:0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeCloudCursor(scopeKey:string,cursorMs:number){
+  if(!Number.isFinite(cursorMs)||cursorMs<=0)return;
+  try {localStorage.setItem(cloudCursorKey(scopeKey),String(cursorMs));}
+  catch {}
 }
 
 function markCloudSession(scopeKey:string){
@@ -834,7 +854,19 @@ export default function Home() {
       return;
     }
 
-    void loadCloudDatabase(user,personalScope).then(cloudDatabase=>{
+    const cursorMs=readCloudCursor(scopeKey);
+    const canUseIncremental=
+      lastCloudUid===user.uid &&
+      cursorMs>0 &&
+      !pending &&
+      !canMergeLocal;
+
+    const cloudLoadPromise=canUseIncremental
+      ?loadCloudDatabaseChanges(user,personalScope,localDatabase,cursorMs)
+      :loadCloudDatabaseWithCursor(user,personalScope);
+
+    void cloudLoadPromise.then(({database:cloudDatabase,cursorMs:nextCursorMs})=>{
+      writeCloudCursor(scopeKey,nextCursorMs);
       cloudShadowRef.current.set(scopeKey,cloudDatabase);
 
       let next=cloudDatabase;

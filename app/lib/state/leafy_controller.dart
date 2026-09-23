@@ -27,6 +27,7 @@ class LeafyController extends GetxController {
   static const _guestDirtyKey = 'leafy-guest-dirty-v1';
   static const _quizHistoryKey = 'leafy-quiz-history-v1';
   static const _cloudCachePrefix = 'leafy-cloud-cache-v3';
+  static const _cloudSyncCursorPrefix = 'leafy-cloud-sync-cursor-v1';
 
   final SharedPreferences preferences;
   final FirebaseAuth? auth;
@@ -62,6 +63,21 @@ class LeafyController extends GetxController {
 
   String _cacheKey(String uid, String? group) =>
       '$_cloudCachePrefix:$uid:${group ?? 'personal'}';
+
+  String _syncCursorKey(String uid, String? group) =>
+      '$_cloudSyncCursorPrefix:$uid:${group ?? 'personal'}';
+
+  int _readSyncCursor(String uid, String? group) =>
+      preferences.getInt(_syncCursorKey(uid, group)) ?? 0;
+
+  Future<void> _writeSyncCursor(
+    String uid,
+    String? group,
+    int cursorMs,
+  ) async {
+    if (cursorMs <= 0) return;
+    await preferences.setInt(_syncCursorKey(uid, group), cursorMs);
+  }
 
   Notebook? _readCloudCache(String uid, String? group) {
     try {
@@ -293,18 +309,32 @@ class LeafyController extends GetxController {
       );
       _repository = repository;
 
-      if (cached != null) {
+      if (cached != null && !forceRemote) {
         book = cached;
         loaded = true;
         return;
       }
 
-      final next = await repository.load();
+      final existingCache =
+          cached ?? _readCloudCache(user!.uid, groupId);
+      final cursorMs = _readSyncCursor(user!.uid, groupId);
+
+      final CloudLoadResult result;
+      if (existingCache != null && cursorMs > 0) {
+        result = await repository.loadChangesSince(
+          existingCache,
+          cursorMs,
+        );
+      } else {
+        result = await repository.loadFullWithCursor();
+      }
+
       if (generation != _generation) return;
 
-      book = next;
+      book = result.notebook;
       loaded = true;
-      await _writeCloudCache(user!.uid, groupId, next);
+      await _writeCloudCache(user!.uid, groupId, book);
+      await _writeSyncCursor(user!.uid, groupId, result.cursorMs);
     } catch (exception) {
       if (generation == _generation) {
         error = '불러오지 못했습니다. 다시 시도해주세요. ($exception)';
