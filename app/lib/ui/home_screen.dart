@@ -525,6 +525,12 @@ class _HomeScreenState extends State<HomeScreen> {
         onChanged: (value) => _ui.mutate(() {
           category = value ?? '전체';
           wordPage = 1;
+
+          if (category != '전체') {
+            studyScope = '카테고리:$category';
+          } else if (studyScope.startsWith('카테고리:')) {
+            studyScope = '오늘 복습';
+          }
         }),
       ),
       const SizedBox(height: 16),
