@@ -8,7 +8,7 @@ import {cleanEntries, getExamples, getMeanings, getSynonyms, blankWord, demoWord
 
 import {WordEntriesEditor, WordEntriesDetails, ExampleList, MeaningList} from './word-entries';
 import {pronunciationSources} from './lib/pronunciation';
-import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, loadCloudDatabaseChanges, loadCloudDatabaseWithCursor, syncCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
+import {firebaseConfigured, listenFirebaseUser, loadCloudDatabase, loadCloudDatabaseChanges, syncCloudDatabase, signInEmail, signInGoogle, signOutFirebase, type CloudScope} from './lib/firebase';
 import type {User} from 'firebase/auth';
 
 type Mode = 'flash'|'choice'|'typing'|'meaningTyping'|'context';
@@ -25,7 +25,6 @@ const LAST_CLOUD_UID_KEY='leaf-last-cloud-uid-v1';
 const LOCAL_ACCOUNT_BACKUP_PREFIX='leaf-local-account-backup-v1'; // CLOUD_SAVE_DURABILITY_V2
 const WORDS_PER_PAGE=24; // WORD_LIST_PAGINATION_V4
 const CLOUD_SESSION_PREFIX='leaf-cloud-session-v1'; // FIRESTORE_COST_OPTIMIZATION_V1
-const CLOUD_CURSOR_PREFIX='leaf-cloud-cursor-v1'; // FIRESTORE_INCREMENTAL_SYNC_V1
 // RELEARNING_FEATURE_V2
 const RELEARNING_STREAK_TARGET=3;
 const RELEARNING_SHARE=.3;
@@ -428,24 +427,6 @@ function cloudSessionKey(scopeKey:string){
   return `${CLOUD_SESSION_PREFIX}:${scopeKey}`;
 }
 
-function cloudCursorKey(scopeKey:string){
-  return `${CLOUD_CURSOR_PREFIX}:${scopeKey}`;
-}
-
-function readCloudCursor(scopeKey:string){
-  try {
-    const value=Number(localStorage.getItem(cloudCursorKey(scopeKey))||'0');
-    return Number.isFinite(value)&&value>0?value:0;
-  } catch {
-    return 0;
-  }
-}
-
-function writeCloudCursor(scopeKey:string,cursorMs:number){
-  if(!Number.isFinite(cursorMs)||cursorMs<=0)return;
-  try {localStorage.setItem(cloudCursorKey(scopeKey),String(cursorMs));}
-  catch {}
-}
 
 function markCloudSession(scopeKey:string){
   try {sessionStorage.setItem(cloudSessionKey(scopeKey),'1');}
@@ -714,6 +695,7 @@ export default function Home() {
   const typingInputRef = useRef<HTMLInputElement>(null);
   const firebaseUserRef = useRef<User|null>(null);
   const cloudSaveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const cloudDebounceRef = useRef<number|null>(null);
   const cloudShadowRef = useRef<Map<string,Database>>(new Map());
   const meaningComposingRef = useRef(false);
   const meaningSubmitAfterCompositionRef = useRef(false); // MEANING_SINGLE_ENTER_V1
@@ -854,19 +836,11 @@ export default function Home() {
       return;
     }
 
-    const cursorMs=readCloudCursor(scopeKey);
-    const canUseIncremental=
-      lastCloudUid===user.uid &&
-      cursorMs>0 &&
-      !pending &&
-      !canMergeLocal;
+    const cloudLoadPromise=lastCloudUid===user.uid
+      ?loadCloudDatabaseChanges(user,personalScope,localDatabase)
+      :loadCloudDatabase(user,personalScope);
 
-    const cloudLoadPromise=canUseIncremental
-      ?loadCloudDatabaseChanges(user,personalScope,localDatabase,cursorMs)
-      :loadCloudDatabaseWithCursor(user,personalScope);
-
-    void cloudLoadPromise.then(({database:cloudDatabase,cursorMs:nextCursorMs})=>{
-      writeCloudCursor(scopeKey,nextCursorMs);
+    void cloudLoadPromise.then(cloudDatabase=>{
       cloudShadowRef.current.set(scopeKey,cloudDatabase);
 
       let next=cloudDatabase;
@@ -920,6 +894,18 @@ export default function Home() {
       );
     });
   }),[]);
+  useEffect(()=>{
+    const flushOnHide=()=>{
+      if(document.visibilityState!=='hidden')return;
+      const user=firebaseUserRef.current;
+      const scope=selectedCloudScope();
+      if(!user||!scope)return;
+      if(!readPendingCloudDatabase(user.uid,scope))return;
+      void queueCloudSave(user,scope,dbRef.current);
+    };
+    document.addEventListener('visibilitychange',flushOnHide);
+    return ()=>document.removeEventListener('visibilitychange',flushOnHide);
+  },[cloudScope,groupId]);
   useEffect(()=>()=>stopPronunciation(),[page,quiz?.index,quiz?.mode]);
   function toggleAutoPronunciation(){
     const enabled=!autoPronunciation;
@@ -941,6 +927,33 @@ export default function Home() {
     const frame=requestAnimationFrame(()=>typingInputRef.current?.focus());
     return ()=>cancelAnimationFrame(frame);
   },[quiz?.index,quiz?.mode,graded]);
+  function scheduleCloudSave(
+    user:User,
+    scope:CloudScope,
+    next:Database,
+  ){
+    try {
+      writePendingCloudDatabase(user.uid,scope,next);
+    } catch {
+      setNotice('브라우저에 클라우드 저장 대기 데이터를 기록하지 못했습니다.');
+      return;
+    }
+
+    if(cloudDebounceRef.current!==null){
+      window.clearTimeout(cloudDebounceRef.current);
+    }
+
+    // 연속 퀴즈/수정을 한 번의 chunk sync로 합친다.
+    cloudDebounceRef.current=window.setTimeout(()=>{
+      cloudDebounceRef.current=null;
+      const latestUser=firebaseUserRef.current;
+      if(!latestUser)return;
+      const latestScope=selectedCloudScope();
+      if(!latestScope)return;
+      void queueCloudSave(latestUser,latestScope,dbRef.current);
+    },45000);
+  }
+
   function queueCloudSave(
     user:User,
     scope:CloudScope,
@@ -1035,7 +1048,7 @@ export default function Home() {
     setDB(next);
 
     if(user&&scope){
-      queueCloudSave(user,scope,next);
+      scheduleCloudSave(user,scope,next);
     }
 
     return true;
@@ -1129,7 +1142,7 @@ export default function Home() {
     try {
       await cloudSaveQueueRef.current.catch(()=>false);
 
-      let next=await loadCloudDatabase(firebaseUser,scope);
+      let next=await loadCloudDatabaseChanges(firebaseUser,scope,dbRef.current);
       const scopeKey=cloudScopeKey(firebaseUser.uid,scope);
 
       cloudShadowRef.current.set(scopeKey,next);

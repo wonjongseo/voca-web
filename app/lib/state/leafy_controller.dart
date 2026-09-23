@@ -27,7 +27,9 @@ class LeafyController extends GetxController {
   static const _guestDirtyKey = 'leafy-guest-dirty-v1';
   static const _quizHistoryKey = 'leafy-quiz-history-v1';
   static const _cloudCachePrefix = 'leafy-cloud-cache-v3';
-  static const _cloudSyncCursorPrefix = 'leafy-cloud-sync-cursor-v1';
+  static const _cloudChunkVersionsPrefix = 'leafy-cloud-chunk-versions-v4';
+  static const _cloudDirtyWordsPrefix = 'leafy-cloud-dirty-words-v4';
+  static const _cloudDirtyMetaPrefix = 'leafy-cloud-dirty-meta-v4';
 
   final SharedPreferences preferences;
   final FirebaseAuth? auth;
@@ -37,6 +39,7 @@ class LeafyController extends GetxController {
   NotebookRepository? _repository;
   String? _authUid;
   Future<void>? _googleInitialization;
+  Timer? _cloudFlushTimer;
 
   Notebook book = const Notebook();
   User? user;
@@ -64,20 +67,129 @@ class LeafyController extends GetxController {
   String _cacheKey(String uid, String? group) =>
       '$_cloudCachePrefix:$uid:${group ?? 'personal'}';
 
-  String _syncCursorKey(String uid, String? group) =>
-      '$_cloudSyncCursorPrefix:$uid:${group ?? 'personal'}';
 
-  int _readSyncCursor(String uid, String? group) =>
-      preferences.getInt(_syncCursorKey(uid, group)) ?? 0;
+  String _chunkVersionsKey(String uid, String? group) =>
+      '$_cloudChunkVersionsPrefix:$uid:${group ?? 'personal'}';
 
-  Future<void> _writeSyncCursor(
+  String _dirtyWordsKey(String uid, String? group) =>
+      '$_cloudDirtyWordsPrefix:$uid:${group ?? 'personal'}';
+
+  String _dirtyMetaKey(String uid, String? group) =>
+      '$_cloudDirtyMetaPrefix:$uid:${group ?? 'personal'}';
+
+  Map<String, int> _readChunkVersions(String uid, String? group) {
+    try {
+      final raw = preferences.getString(_chunkVersionsKey(uid, group));
+      if (raw == null) return {};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return decoded.map(
+        (key, value) => MapEntry('$key', (value as num? ?? 0).toInt()),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> _writeChunkVersions(
     String uid,
     String? group,
-    int cursorMs,
-  ) async {
-    if (cursorMs <= 0) return;
-    await preferences.setInt(_syncCursorKey(uid, group), cursorMs);
+    Map<String, int> versions,
+  ) => preferences.setString(
+        _chunkVersionsKey(uid, group),
+        jsonEncode(versions),
+      );
+
+  Set<String> _readDirtyWordIds(String uid, String? group) {
+    try {
+      final raw = preferences.getString(_dirtyWordsKey(uid, group));
+      if (raw == null) return {};
+      final decoded = jsonDecode(raw);
+      return decoded is List ? decoded.whereType<String>().toSet() : {};
+    } catch (_) {
+      return {};
+    }
   }
+
+  bool _readDirtyMeta(String uid, String? group) =>
+      preferences.getBool(_dirtyMetaKey(uid, group)) ?? false;
+
+  Future<void> _markCloudDirty(
+    Notebook before,
+    Notebook after,
+  ) async {
+    final currentUser = user;
+    if (currentUser == null) return;
+
+    final dirty = _readDirtyWordIds(currentUser.uid, groupId);
+    final beforeWords = {for (final word in before.words) word.id: word.toJson()};
+    final afterWords = {for (final word in after.words) word.id: word.toJson()};
+    final ids = {...beforeWords.keys, ...afterWords.keys};
+
+    final beforeReviews = <String, List<Map<String, dynamic>>>{};
+    final afterReviews = <String, List<Map<String, dynamic>>>{};
+    for (final review in before.reviews) {
+      final id = '${review['wordId'] ?? ''}';
+      if (id.isNotEmpty) beforeReviews.putIfAbsent(id, () => []).add(review);
+    }
+    for (final review in after.reviews) {
+      final id = '${review['wordId'] ?? ''}';
+      if (id.isNotEmpty) afterReviews.putIfAbsent(id, () => []).add(review);
+    }
+
+    for (final id in ids) {
+      if (jsonEncode(beforeWords[id]) != jsonEncode(afterWords[id]) ||
+          jsonEncode(beforeReviews[id] ?? const []) !=
+              jsonEncode(afterReviews[id] ?? const [])) {
+        dirty.add(id);
+      }
+    }
+
+    await preferences.setString(
+      _dirtyWordsKey(currentUser.uid, groupId),
+      jsonEncode(dirty.toList()),
+    );
+
+    if (jsonEncode(before.categories) != jsonEncode(after.categories)) {
+      await preferences.setBool(_dirtyMetaKey(currentUser.uid, groupId), true);
+    }
+  }
+
+  void _scheduleCloudFlush() {
+    if (user == null || _repository is! CloudRepository) return;
+    _cloudFlushTimer?.cancel();
+    _cloudFlushTimer = Timer(
+      const Duration(seconds: 45),
+      () => unawaited(_flushCloudNow()),
+    );
+  }
+
+  Future<void> _flushCloudNow() async {
+    final currentUser = user;
+    final repository = _repository;
+    if (currentUser == null || repository is! CloudRepository) return;
+
+    final dirty = _readDirtyWordIds(currentUser.uid, groupId);
+    final metadataDirty = _readDirtyMeta(currentUser.uid, groupId);
+    if (dirty.isEmpty && !metadataDirty) return;
+
+    try {
+      final versions = _readChunkVersions(currentUser.uid, groupId);
+      final nextVersions = await repository.writeDirtyChunks(
+        book,
+        dirty,
+        metadataDirty,
+        versions,
+      );
+
+      await _writeChunkVersions(currentUser.uid, groupId, nextVersions);
+      await preferences.remove(_dirtyWordsKey(currentUser.uid, groupId));
+      await preferences.remove(_dirtyMetaKey(currentUser.uid, groupId));
+    } catch (_) {
+      // local cache/dirty marker는 유지. 다음 실행/idle 때 재시도.
+    }
+  }
+
 
   Notebook? _readCloudCache(String uid, String? group) {
     try {
@@ -299,15 +411,24 @@ class LeafyController extends GetxController {
         throw StateError('Firebase Firestore가 초기화되지 않았습니다.');
       }
 
-      final cached =
-          forceRemote ? null : _readCloudCache(user!.uid, groupId);
-
+      final currentUser = user!;
       final repository = CloudRepository(
         firestore!,
-        user!.uid,
+        currentUser.uid,
         groupId: groupId,
       );
       _repository = repository;
+
+      final cached = _readCloudCache(currentUser.uid, groupId);
+
+      // 이전 실행에서 아직 cloud에 못 올린 로컬 변경이 있으면 먼저 전송한다.
+      if (cached != null &&
+          (_readDirtyWordIds(currentUser.uid, groupId).isNotEmpty ||
+              _readDirtyMeta(currentUser.uid, groupId))) {
+        book = cached;
+        loaded = true;
+        await _flushCloudNow();
+      }
 
       if (cached != null && !forceRemote) {
         book = cached;
@@ -315,26 +436,21 @@ class LeafyController extends GetxController {
         return;
       }
 
-      final existingCache =
-          cached ?? _readCloudCache(user!.uid, groupId);
-      final cursorMs = _readSyncCursor(user!.uid, groupId);
+      final localVersions = _readChunkVersions(currentUser.uid, groupId);
+      final ChunkLoadResult result;
 
-      final CloudLoadResult result;
-      if (existingCache != null && cursorMs > 0) {
-        result = await repository.loadChangesSince(
-          existingCache,
-          cursorMs,
-        );
+      if (cached != null && localVersions.isNotEmpty) {
+        result = await repository.loadChangedChunks(cached, localVersions);
       } else {
-        result = await repository.loadFullWithCursor();
+        result = await repository.loadFullChunked();
       }
 
       if (generation != _generation) return;
 
       book = result.notebook;
       loaded = true;
-      await _writeCloudCache(user!.uid, groupId, book);
-      await _writeSyncCursor(user!.uid, groupId, result.cursorMs);
+      await _writeCloudCache(currentUser.uid, groupId, book);
+      await _writeChunkVersions(currentUser.uid, groupId, result.versions);
     } catch (exception) {
       if (generation == _generation) {
         error = '불러오지 못했습니다. 다시 시도해주세요. ($exception)';
@@ -432,20 +548,25 @@ class LeafyController extends GetxController {
     }
 
     final generation = _generation;
+    final before = book;
+    final nextBook = next();
+
     busy = true;
     error = null;
     update();
 
     try {
-      await write(_repository!);
-      if (generation != _generation) return;
-
-      book = next();
-
       if (user == null) {
+        await write(_repository!);
+        if (generation != _generation) return;
+        book = nextBook;
         await preferences.setBool(_guestDirtyKey, true);
       } else {
+        // 비용 최소화: Firestore에는 즉시 쓰지 않고 로컬을 source of truth로 사용.
+        book = nextBook;
         await _writeCloudCache(user!.uid, groupId, book);
+        await _markCloudDirty(before, book);
+        _scheduleCloudFlush();
       }
     } catch (exception) {
       if (generation == _generation) {

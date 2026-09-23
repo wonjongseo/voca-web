@@ -336,7 +336,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             padding: const EdgeInsets.fromLTRB(18, 20, 18, 122),
                             children: [
                               _header(),
-                              const SizedBox(height: 18),
+                              const SizedBox(height: 10),
                               if (tab == 0)
                                 ..._words(categories, wrongOnly: false),
                               if (tab == 1) ..._study(categories),
@@ -486,7 +486,7 @@ class _HomeScreenState extends State<HomeScreen> {
           wordPage = 1;
         }),
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 8),
       SizedBox(
         height: 42,
         child: ListView(
@@ -507,7 +507,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      const SizedBox(height: 10),
+      const SizedBox(height: 20),
       DropdownButtonFormField<String>(
         initialValue: categories.contains(category) ? category : '전체',
         decoration: const InputDecoration(

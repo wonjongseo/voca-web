@@ -6,18 +6,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/vocabulary.dart';
 
 const _reviewStorageVersion = 3;
-const _syncOverlapMs = 5000;
+const _chunkSchemaVersion = 4;
+const _chunkCount = 16;
 
-class CloudLoadResult {
-  const CloudLoadResult({
+class ChunkLoadResult {
+  const ChunkLoadResult({
     required this.notebook,
-    required this.cursorMs,
+    required this.versions,
   });
 
   final Notebook notebook;
-  final int cursorMs;
+  final Map<String, int> versions;
 }
-
 
 abstract class NotebookRepository {
   Future<Notebook> load();
@@ -132,27 +132,24 @@ class CloudRepository implements NotebookRepository {
       ? firestore.collection('users').doc(uid)
       : firestore.collection('groups').doc(groupId);
 
-  String _reviewId(Map<String, dynamic> review, int wordIndex) {
+  CollectionReference<Map<String, dynamic>> get chunks =>
+      root.collection('wordChunks');
+
+  String _reviewId(Map<String, dynamic> review, int index) {
     final id = '${review['id'] ?? ''}'.trim();
     if (id.isNotEmpty) return id;
-    return 'legacy:${review['date']}:${review['correct'] == true ? 1 : 0}:$wordIndex';
+    return 'legacy:${review['date']}:${review['correct'] == true ? 1 : 0}:$index';
   }
 
-  String _encodeReviewEvent(
-    Map<String, dynamic> review,
-    int wordIndex,
-  ) {
+  String _encodeReviewEvent(Map<String, dynamic> review, int index) {
     return jsonEncode([
-      _reviewId(review, wordIndex),
+      _reviewId(review, index),
       '${review['date'] ?? ''}',
       review['correct'] == true ? 1 : 0,
     ]);
   }
 
-  Map<String, dynamic>? _decodeReviewEvent(
-    String raw,
-    String wordId,
-  ) {
+  Map<String, dynamic>? _decodeReviewEvent(String raw, String wordId) {
     try {
       final parsed = jsonDecode(raw);
       if (parsed is! List ||
@@ -177,57 +174,116 @@ class CloudRepository implements NotebookRepository {
     List<Map<String, dynamic>> reviews,
     String wordId,
   ) {
-    final matches =
-        reviews.where((review) => review['wordId'] == wordId).toList();
+    final matches = reviews
+        .where((review) => review['wordId'] == wordId)
+        .toList();
     return [
-      for (var index = 0; index < matches.length; index++)
-        _encodeReviewEvent(matches[index], index),
+      for (var i = 0; i < matches.length; i++)
+        _encodeReviewEvent(matches[i], i),
     ];
   }
 
-  Map<String, dynamic> _wordData(
-    VocabWord word, {
-    Object? reviewEvents,
-  }) {
-    final data = <String, dynamic>{
-      ...word.toJson(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'updatedBy': uid,
-      'deleted': false,
-    };
+  String chunkIdForWord(String wordId) {
+    var hash = 0;
+    for (final unit in wordId.codeUnits) {
+      hash = ((hash * 31) + unit) & 0xffffffff;
+    }
+    return (hash % _chunkCount).toString().padLeft(2, '0');
+  }
 
-    if (reviewEvents != null) {
-      data['_reviewEvents'] = reviewEvents;
+  Map<String, int> _versionsFromRoot(Map<String, dynamic>? data) {
+    final raw = data?['chunkVersions'];
+    if (raw is! Map) return <String, int>{};
+    return raw.map(
+      (key, value) => MapEntry(
+        '$key',
+        (value as num? ?? 0).toInt(),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _chunkPayload(Notebook notebook, String chunkId) {
+    final words = <String, dynamic>{};
+    for (final word in notebook.words) {
+      if (chunkIdForWord(word.id) != chunkId) continue;
+      words[word.id] = <String, dynamic>{
+        ...word.toJson(),
+        '_reviewEvents': _reviewEventsFor(notebook.reviews, word.id),
+      };
+    }
+    return words;
+  }
+
+  Notebook _applyChunkDocs(
+    Notebook base,
+    Iterable<DocumentSnapshot<Map<String, dynamic>>> docs,
+    List<String> rootCategories,
+  ) {
+    final wordsById = <String, VocabWord>{
+      for (final word in base.words) word.id: word,
+    };
+    final reviewsByWord = <String, List<Map<String, dynamic>>>{};
+    for (final review in base.reviews) {
+      final wordId = '${review['wordId'] ?? ''}';
+      if (wordId.isEmpty) continue;
+      reviewsByWord.putIfAbsent(wordId, () => []).add(review);
     }
 
-    return data;
-  }
+    for (final doc in docs) {
+      final chunkId = doc.id;
 
-  VocabWord _wordFromDoc(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = Map<String, dynamic>.from(doc.data())
-      ..remove('_reviewEvents')
-      ..remove('updatedAt')
-      ..remove('updatedBy')
-      ..remove('deleted');
-    return VocabWord({...data, 'id': doc.id});
-  }
+      final removeIds = wordsById.values
+          .where((word) => chunkIdForWord(word.id) == chunkId)
+          .map((word) => word.id)
+          .toList();
+      for (final id in removeIds) {
+        wordsById.remove(id);
+        reviewsByWord.remove(id);
+      }
 
-  List<Map<String, dynamic>> _reviewsFromWordDoc(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final raw = doc.data()['_reviewEvents'];
-    if (raw is! List) return [];
-    return raw
-        .whereType<String>()
-        .map((event) => _decodeReviewEvent(event, doc.id))
-        .whereType<Map<String, dynamic>>()
-        .toList();
+      final rawWords = doc.data()?['words'];
+      if (rawWords is! Map) continue;
+
+      for (final entry in rawWords.entries) {
+        if (entry.value is! Map) continue;
+        final id = '${entry.key}';
+        final data = Map<String, dynamic>.from(entry.value as Map);
+        final events = data.remove('_reviewEvents');
+        data['id'] = id;
+        wordsById[id] = VocabWord(data);
+
+        if (events is List) {
+          reviewsByWord[id] = events
+              .whereType<String>()
+              .map((event) => _decodeReviewEvent(event, id))
+              .whereType<Map<String, dynamic>>()
+              .toList();
+        }
+      }
+    }
+
+    final words = wordsById.values.toList()
+      ..sort((a, b) {
+        final ac = (a.data['created'] as num? ?? 0).toInt();
+        final bc = (b.data['created'] as num? ?? 0).toInt();
+        return bc.compareTo(ac);
+      });
+
+    final categories = <String>{
+      ...rootCategories,
+      ...words.map((word) => word.category).where((value) => value.isNotEmpty),
+    }.toList()
+      ..sort();
+
+    return Notebook(
+      words: words,
+      reviews: reviewsByWord.values.expand((items) => items).toList(),
+      categories: categories,
+    );
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      _loadWordDocs() async {
+      _loadLegacyWordDocs() async {
     final result = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     QueryDocumentSnapshot<Map<String, dynamic>>? last;
 
@@ -237,361 +293,105 @@ class CloudRepository implements NotebookRepository {
           .orderBy(FieldPath.documentId)
           .limit(300);
       if (last != null) query = query.startAfterDocument(last);
-
       final page = await query.get();
       result.addAll(page.docs);
-
       if (page.docs.length < 300) break;
       last = page.docs.last;
     }
-
     return result;
-  }
-
-  int _maxCursorMs(
-    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs, [
-    int fallback = 0,
-  ]) {
-    var cursor = fallback;
-    for (final doc in docs) {
-      final value = doc.data()['updatedAt'];
-      if (value is Timestamp && value.millisecondsSinceEpoch > cursor) {
-        cursor = value.millisecondsSinceEpoch;
-      }
-    }
-    return cursor;
-  }
-
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      _loadChangedWordDocs(int sinceMs) async {
-    final safeMs = sinceMs > _syncOverlapMs ? sinceMs - _syncOverlapMs : 0;
-    final threshold = Timestamp.fromMillisecondsSinceEpoch(safeMs);
-
-    final result = await root
-        .collection('words')
-        .where('updatedAt', isGreaterThan: threshold)
-        .orderBy('updatedAt')
-        .get();
-
-    return result.docs;
-  }
-
-  Notebook _mergeChangedDocs(
-    Notebook base,
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-    List<String> rootCategories,
-  ) {
-    final words = <String, VocabWord>{
-      for (final word in base.words) word.id: word,
-    };
-
-    final reviews = <String, List<Map<String, dynamic>>>{};
-    for (final review in base.reviews) {
-      final wordId = '${review['wordId'] ?? ''}';
-      if (wordId.isEmpty) continue;
-      reviews.putIfAbsent(wordId, () => []).add(review);
-    }
-
-    for (final doc in docs) {
-      final data = doc.data();
-      if (data['deleted'] == true) {
-        words.remove(doc.id);
-        reviews.remove(doc.id);
-        continue;
-      }
-
-      words[doc.id] = _wordFromDoc(doc);
-      reviews[doc.id] = _reviewsFromWordDoc(doc);
-    }
-
-    final mergedWords = words.values.toList()
-      ..sort((a, b) => b.created.compareTo(a.created));
-
-    final categories = <String>{
-      ...rootCategories,
-      ...mergedWords
-          .map((word) => word.category)
-          .where((value) => value.isNotEmpty),
-    }.toList()
-      ..sort();
-
-    return Notebook(
-      words: mergedWords,
-      reviews: reviews.values.expand((items) => items).toList(),
-      categories: categories,
-    );
-  }
-
-  Future<CloudLoadResult> loadFullWithCursor() async {
-    final metadataFuture = root.get();
-    final wordsFuture = _loadWordDocs();
-
-    final metadata = await metadataFuture;
-    final wordDocs = await wordsFuture;
-    final activeDocs =
-        wordDocs.where((doc) => doc.data()['deleted'] != true).toList();
-    final words = activeDocs.map(_wordFromDoc).toList();
-
-    final storedCategories = (metadata.data()?['categories'] as List? ?? const [])
-        .whereType<String>()
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
-        .toList();
-
-    final categories = <String>{
-      ...storedCategories,
-      ...words.map((word) => word.category).where((value) => value.isNotEmpty),
-    }.toList()
-      ..sort();
-
-    final storageVersion =
-        (metadata.data()?['reviewStorageVersion'] as num?)?.toInt();
-
-    if (storageVersion == _reviewStorageVersion) {
-      return CloudLoadResult(
-        notebook: Notebook(
-          words: words,
-          reviews: activeDocs.expand(_reviewsFromWordDoc).toList(),
-          categories: categories,
-        ),
-        cursorMs: _maxCursorMs(wordDocs),
-      );
-    }
-
-    final legacyReviews = await _loadLegacyReviews();
-    await _migrateLegacyReviews(words, legacyReviews);
-
-    return CloudLoadResult(
-      notebook: Notebook(
-        words: words,
-        reviews: legacyReviews,
-        categories: categories,
-      ),
-      cursorMs: _maxCursorMs(wordDocs),
-    );
-  }
-
-  Future<CloudLoadResult> loadChangesSince(
-    Notebook base,
-    int sinceMs,
-  ) async {
-    final metadataFuture = root.get();
-    final changedFuture = _loadChangedWordDocs(sinceMs);
-
-    final metadata = await metadataFuture;
-    final changedDocs = await changedFuture;
-
-    final categories = (metadata.data()?['categories'] as List? ?? const [])
-        .whereType<String>()
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
-        .toList();
-
-    return CloudLoadResult(
-      notebook: _mergeChangedDocs(base, changedDocs, categories),
-      cursorMs: _maxCursorMs(changedDocs, sinceMs),
-    );
   }
 
   Future<List<Map<String, dynamic>>> _loadLegacyReviews() async {
     final result = <Map<String, dynamic>>[];
-    QueryDocumentSnapshot<Map<String, dynamic>>? last;
-
-    while (true) {
-      Query<Map<String, dynamic>> query = root
-          .collection('reviews')
-          .orderBy(FieldPath.documentId)
-          .limit(500);
-      if (last != null) query = query.startAfterDocument(last);
-
-      final page = await query.get();
-      for (final doc in page.docs) {
-        result.add({
-          ...doc.data(),
-          'id': 'legacy:${doc.id}',
-        });
-      }
-
-      if (page.docs.length < 500) break;
-      last = page.docs.last;
+    final snap = await root.collection('reviews').get();
+    for (final doc in snap.docs) {
+      result.add({...doc.data(), 'id': 'legacy:${doc.id}'});
     }
-
     return result;
   }
 
   Future<void> _commitBatches(
     List<void Function(WriteBatch batch)> operations,
   ) async {
-    if (operations.isEmpty) return;
-
     for (var start = 0; start < operations.length; start += 450) {
       final batch = firestore.batch();
-      for (final operation in operations.skip(start).take(450)) {
-        operation(batch);
+      for (final op in operations.skip(start).take(450)) {
+        op(batch);
       }
       await batch.commit();
     }
   }
 
-  Future<void> _migrateLegacyReviews(
-    List<VocabWord> words,
-    List<Map<String, dynamic>> legacyReviews,
+  Future<ChunkLoadResult> _migrateLegacy(
+    DocumentSnapshot<Map<String, dynamic>> metadata,
   ) async {
-    final operations = <void Function(WriteBatch batch)>[];
+    final wordDocs = await _loadLegacyWordDocs();
+    final activeDocs = wordDocs
+        .where((doc) => doc.data()['deleted'] != true)
+        .toList();
 
-    for (final word in words) {
-      final events = _reviewEventsFor(legacyReviews, word.id);
-      if (events.isEmpty) continue;
+    final words = <VocabWord>[];
+    final reviews = <Map<String, dynamic>>[];
 
-      operations.add(
-        (batch) => batch.set(
-          root.collection('words').doc(word.id),
-          {
-            '_reviewEvents': events,
-            'updatedAt': FieldValue.serverTimestamp(),
-            'updatedBy': uid,
-          },
-          SetOptions(merge: true),
-        ),
-      );
+    for (final doc in activeDocs) {
+      final data = Map<String, dynamic>.from(doc.data());
+      final events = data.remove('_reviewEvents');
+      data.remove('updatedAt');
+      data.remove('updatedBy');
+      data.remove('deleted');
+      data['id'] = doc.id;
+      words.add(VocabWord(data));
+
+      if (events is List) {
+        reviews.addAll(
+          events
+              .whereType<String>()
+              .map((event) => _decodeReviewEvent(event, doc.id))
+              .whereType<Map<String, dynamic>>(),
+        );
+      }
     }
 
-    operations.add(
-      (batch) => batch.set(
-        root,
-        {
-          'reviewStorageVersion': _reviewStorageVersion,
-          'updatedAt': FieldValue.serverTimestamp(),
-          'updatedBy': uid,
-        },
-        SetOptions(merge: true),
-      ),
+    final storageVersion =
+        (metadata.data()?['reviewStorageVersion'] as num?)?.toInt();
+    if (storageVersion != _reviewStorageVersion) {
+      reviews
+        ..clear()
+        ..addAll(await _loadLegacyReviews());
+    }
+
+    final storedCategories =
+        (metadata.data()?['categories'] as List? ?? const [])
+            .whereType<String>()
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty);
+
+    final notebook = Notebook(
+      words: words,
+      reviews: reviews,
+      categories: <String>{
+        ...storedCategories,
+        ...words.map((word) => word.category).where((value) => value.isNotEmpty),
+      }.toList()
+        ..sort(),
     );
 
-    await _commitBatches(operations);
-  }
-
-  @override
-  Future<Notebook> load() async {
-    return (await loadFullWithCursor()).notebook;
-  }
-
-  @override
-  Future<void> putWord(VocabWord word) {
-    return root.collection('words').doc(word.id).set(
-          _wordData(word),
-          SetOptions(merge: true),
-        );
-  }
-
-  @override
-  Future<void> putWords(List<VocabWord> words) async {
-    if (words.isEmpty) return;
-
-    final operations = <void Function(WriteBatch batch)>[
-      for (final word in words)
-        (batch) => batch.set(
-              root.collection('words').doc(word.id),
-              _wordData(word),
-              SetOptions(merge: true),
-            ),
-    ];
-
-    await _commitBatches(operations);
-  }
-
-  @override
-  Future<void> deleteWord(String id) {
-    return root.collection('words').doc(id).set(
-      {
-        'deleted': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'updatedBy': uid,
-      },
-      SetOptions(merge: true),
-    );
-  }
-
-  @override
-  Future<void> review(
-    VocabWord word,
-    Map<String, dynamic> review,
-  ) {
-    final event = _encodeReviewEvent(review, 0);
-    return root.collection('words').doc(word.id).set(
-          _wordData(
-            word,
-            reviewEvents: FieldValue.arrayUnion([event]),
-          ),
-          SetOptions(merge: true),
-        );
-  }
-
-  @override
-  Future<void> replaceReviewEvents(
-    Set<String> wordIds,
-    List<Map<String, dynamic>> reviews,
-  ) async {
-    if (wordIds.isEmpty) return;
-
-    final operations = <void Function(WriteBatch batch)>[
-      for (final wordId in wordIds)
-        (batch) => batch.set(
-              root.collection('words').doc(wordId),
-              {
-                '_reviewEvents': _reviewEventsFor(reviews, wordId),
-                'updatedAt': FieldValue.serverTimestamp(),
-                'updatedBy': uid,
-              },
-              SetOptions(merge: true),
-            ),
-    ];
-
-    await _commitBatches(operations);
-  }
-
-  @override
-  Future<void> setCategories(List<String> categories) {
-    return root.set(
-      {
-        'version': 1,
-        'categories': categories,
-        'reviewStorageVersion': _reviewStorageVersion,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'updatedBy': uid,
-      },
-      SetOptions(merge: true),
-    );
-  }
-
-  Future<void> mergeGuestNotebook(Notebook guest) async {
-    final current = await load();
-
-    final categories = <String>{
-      ...current.categories,
-      ...guest.categories,
-      ...current.words
-          .map((word) => word.category)
-          .where((value) => value.isNotEmpty),
-      ...guest.words
-          .map((word) => word.category)
-          .where((value) => value.isNotEmpty),
-    }.toList()
-      ..sort();
-
+    final versions = <String, int>{};
     final operations = <void Function(WriteBatch batch)>[];
 
-    for (final word in guest.words) {
-      final events = _reviewEventsFor(guest.reviews, word.id);
+    for (var i = 0; i < _chunkCount; i++) {
+      final chunkId = i.toString().padLeft(2, '0');
+      final payload = _chunkPayload(notebook, chunkId);
+      if (payload.isEmpty) continue;
+      versions[chunkId] = 1;
       operations.add(
         (batch) => batch.set(
-          root.collection('words').doc(word.id),
-          _wordData(
-            word,
-            reviewEvents:
-                events.isEmpty ? null : FieldValue.arrayUnion(events),
-          ),
-          SetOptions(merge: true),
+          chunks.doc(chunkId),
+          {
+            'version': 1,
+            'words': payload,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
         ),
       );
     }
@@ -601,8 +401,11 @@ class CloudRepository implements NotebookRepository {
         root,
         {
           'version': 1,
-          'categories': categories,
+          'categories': notebook.categories,
           'reviewStorageVersion': _reviewStorageVersion,
+          'storageSchemaVersion': _chunkSchemaVersion,
+          'chunkCount': _chunkCount,
+          'chunkVersions': versions,
           'updatedAt': FieldValue.serverTimestamp(),
           'updatedBy': uid,
         },
@@ -611,5 +414,154 @@ class CloudRepository implements NotebookRepository {
     );
 
     await _commitBatches(operations);
+    return ChunkLoadResult(notebook: notebook, versions: versions);
+  }
+
+  Future<ChunkLoadResult> loadFullChunked() async {
+    final metadata = await root.get();
+    if ((metadata.data()?['storageSchemaVersion'] as num?)?.toInt() !=
+        _chunkSchemaVersion) {
+      return _migrateLegacy(metadata);
+    }
+
+    final snap = await chunks.get();
+    final categories = (metadata.data()?['categories'] as List? ?? const [])
+        .whereType<String>()
+        .toList();
+
+    return ChunkLoadResult(
+      notebook: _applyChunkDocs(const Notebook(), snap.docs, categories),
+      versions: _versionsFromRoot(metadata.data()),
+    );
+  }
+
+  Future<ChunkLoadResult> loadChangedChunks(
+    Notebook base,
+    Map<String, int> localVersions,
+  ) async {
+    final metadata = await root.get();
+    if ((metadata.data()?['storageSchemaVersion'] as num?)?.toInt() !=
+        _chunkSchemaVersion) {
+      return _migrateLegacy(metadata);
+    }
+
+    final remoteVersions = _versionsFromRoot(metadata.data());
+    final changedIds = remoteVersions.entries
+        .where((entry) => localVersions[entry.key] != entry.value)
+        .map((entry) => entry.key)
+        .toList();
+
+    final changedDocs = await Future.wait(
+      changedIds.map((id) => chunks.doc(id).get()),
+    );
+
+    final categories = (metadata.data()?['categories'] as List? ?? const [])
+        .whereType<String>()
+        .toList();
+
+    return ChunkLoadResult(
+      notebook: _applyChunkDocs(base, changedDocs, categories),
+      versions: remoteVersions,
+    );
+  }
+
+  Future<Map<String, int>> writeDirtyChunks(
+    Notebook notebook,
+    Set<String> dirtyWordIds,
+    bool metadataDirty,
+    Map<String, int> currentVersions,
+  ) async {
+    final dirtyChunks = dirtyWordIds.map(chunkIdForWord).toSet();
+    if (dirtyChunks.isEmpty && !metadataDirty) return currentVersions;
+
+    final versions = Map<String, int>.from(currentVersions);
+    final operations = <void Function(WriteBatch batch)>[];
+
+    for (final chunkId in dirtyChunks) {
+      final nextVersion = (versions[chunkId] ?? 0) + 1;
+      versions[chunkId] = nextVersion;
+      operations.add(
+        (batch) => batch.set(
+          chunks.doc(chunkId),
+          {
+            'version': nextVersion,
+            'words': _chunkPayload(notebook, chunkId),
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+        ),
+      );
+    }
+
+    operations.add(
+      (batch) => batch.set(
+        root,
+        {
+          'version': 1,
+          'categories': notebook.categories,
+          'reviewStorageVersion': _reviewStorageVersion,
+          'storageSchemaVersion': _chunkSchemaVersion,
+          'chunkCount': _chunkCount,
+          'chunkVersions': versions,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedBy': uid,
+        },
+        SetOptions(merge: true),
+      ),
+    );
+
+    await _commitBatches(operations);
+    return versions;
+  }
+
+  @override
+  Future<Notebook> load() async => (await loadFullChunked()).notebook;
+
+  // Cloud write는 LeafyController가 local-first debounce 후 writeDirtyChunks로 수행한다.
+  @override
+  Future<void> putWord(VocabWord word) async {}
+
+  @override
+  Future<void> putWords(List<VocabWord> words) async {}
+
+  @override
+  Future<void> deleteWord(String id) async {}
+
+  @override
+  Future<void> review(VocabWord word, Map<String, dynamic> review) async {}
+
+  @override
+  Future<void> replaceReviewEvents(
+    Set<String> wordIds,
+    List<Map<String, dynamic>> reviews,
+  ) async {}
+
+  @override
+  Future<void> setCategories(List<String> categories) async {}
+
+  Future<void> mergeGuestNotebook(Notebook guest) async {
+    final loaded = await loadFullChunked();
+    final current = loaded.notebook;
+    final guestIds = guest.words.map((word) => word.id).toSet();
+    final merged = Notebook(
+      words: [
+        ...guest.words,
+        ...current.words.where((word) => !guestIds.contains(word.id)),
+      ],
+      reviews: [...current.reviews, ...guest.reviews],
+      categories: <String>{
+        ...current.categories,
+        ...guest.categories,
+        ...guest.words.map((word) => word.category).where((value) => value.isNotEmpty),
+      }.toList()
+        ..sort(),
+    );
+
+    final dirtyIds = merged.words.map((word) => word.id).toSet();
+    await writeDirtyChunks(
+      merged,
+      dirtyIds,
+      true,
+      loaded.versions,
+    );
   }
 }

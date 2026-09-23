@@ -10,22 +10,22 @@ class VocabWord {
   final Map<String, dynamic> data;
 
   factory VocabWord.create(String word, String meaning) => VocabWord({
-        'id': const Uuid().v4(),
-        'word': word,
-        'meaning': meaning,
-        'meaningEntries': meaning.trim().isEmpty ? <String>[] : <String>[meaning],
-        'example': '',
-        'translation': '',
-        'examples': <Map<String, String>>[],
-        'synonyms': '',
-        'synonymEntries': <String>[],
-        'memo': '',
-        'category': '',
-        'favorite': false,
-        'level': 0,
-        'due': 0,
-        'created': DateTime.now().millisecondsSinceEpoch,
-      });
+    'id': const Uuid().v4(),
+    'word': word,
+    'meaning': meaning,
+    'meaningEntries': meaning.trim().isEmpty ? <String>[] : <String>[meaning],
+    'example': '',
+    'translation': '',
+    'examples': <Map<String, String>>[],
+    'synonyms': '',
+    'synonymEntries': <String>[],
+    'memo': '',
+    'category': '',
+    'favorite': false,
+    'level': 0,
+    'due': 0,
+    'created': DateTime.now().millisecondsSinceEpoch,
+  });
 
   String get id => '${data['id'] ?? ''}';
   String get word => '${data['word'] ?? ''}';
@@ -34,6 +34,7 @@ class VocabWord {
   bool get favorite => data['favorite'] == true;
   int get level => (data['level'] as num? ?? 0).toInt();
   int get due => (data['due'] as num? ?? 0).toInt();
+  int get created => (data['created'] as num? ?? 0).toInt();
   String get category => text('category').trim();
 
   List<String> get meanings {
@@ -50,11 +51,19 @@ class VocabWord {
   List<Map<String, String>> get examples {
     final raw = data['examples'];
     if (raw is List) {
-      final values = raw.whereType<Map>().map((entry) => <String, String>{
-            'text': '${entry['text'] ?? ''}'.trim(),
-            'translation': '${entry['translation'] ?? ''}'.trim(),
-          }).where((entry) =>
-              entry['text']!.isNotEmpty || entry['translation']!.isNotEmpty).toList();
+      final values = raw
+          .whereType<Map>()
+          .map(
+            (entry) => <String, String>{
+              'text': '${entry['text'] ?? ''}'.trim(),
+              'translation': '${entry['translation'] ?? ''}'.trim(),
+            },
+          )
+          .where(
+            (entry) =>
+                entry['text']!.isNotEmpty || entry['translation']!.isNotEmpty,
+          )
+          .toList();
       if (values.isNotEmpty) return values;
     }
     final example = text('example').trim();
@@ -126,20 +135,29 @@ class Notebook {
         .whereType<Map>()
         .map((entry) => VocabWord(Map<String, dynamic>.from(entry)))
         .toList();
-    if (words.any((word) => word.word.trim().isEmpty || word.meaning.trim().isEmpty) ||
+    if (words.any(
+          (word) => word.word.trim().isEmpty || word.meaning.trim().isEmpty,
+        ) ||
         words.map((word) => word.id).toSet().length != words.length) {
       throw const FormatException('단어장 데이터가 올바르지 않습니다.');
     }
     final rawReviews = data['reviews'];
     final reviews = rawReviews is List
-        ? rawReviews.whereType<Map>().map((entry) {
-            final review = Map<String, dynamic>.from(entry);
-            if (review['id'] != null && review['id'] is! String) review.remove('id');
-            return review;
-          }).where((review) =>
-              review['date'] is String &&
-              review['correct'] is bool &&
-              review['wordId'] is String).toList()
+        ? rawReviews
+              .whereType<Map>()
+              .map((entry) {
+                final review = Map<String, dynamic>.from(entry);
+                if (review['id'] != null && review['id'] is! String)
+                  review.remove('id');
+                return review;
+              })
+              .where(
+                (review) =>
+                    review['date'] is String &&
+                    review['correct'] is bool &&
+                    review['wordId'] is String,
+              )
+              .toList()
         : <Map<String, dynamic>>[];
     final storedCategories = (data['categories'] as List? ?? const [])
         .whereType<String>()
@@ -148,26 +166,24 @@ class Notebook {
     final categories = <String>{
       ...storedCategories,
       ...words.map((word) => word.category).where((value) => value.isNotEmpty),
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     return Notebook(words: words, reviews: reviews, categories: categories);
   }
 
   Map<String, dynamic> toJson() => {
-        'version': 1,
-        'words': words.map((word) => word.toJson()).toList(),
-        'reviews': reviews,
-        'categories': categories,
-      };
+    'version': 1,
+    'words': words.map((word) => word.toJson()).toList(),
+    'reviews': reviews,
+    'categories': categories,
+  };
 
   Notebook replace({
     List<VocabWord>? words,
     List<Map<String, dynamic>>? reviews,
     List<String>? categories,
-  }) =>
-      Notebook(
-        words: words ?? this.words,
-        reviews: reviews ?? this.reviews,
-        categories: categories ?? this.categories,
-      );
+  }) => Notebook(
+    words: words ?? this.words,
+    reviews: reviews ?? this.reviews,
+    categories: categories ?? this.categories,
+  );
 }
