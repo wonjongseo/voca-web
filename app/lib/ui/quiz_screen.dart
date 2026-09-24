@@ -140,7 +140,7 @@ class _QuizScreenState extends State<QuizScreen> {
     }
   }
 
-  Future<void> grade(bool correct) async {
+  Future<void> grade(bool correct, {bool advanceImmediately = false}) async {
     if (saving || result != null) return;
 
     _ui.mutate(() => saving = true);
@@ -149,13 +149,22 @@ class _QuizScreenState extends State<QuizScreen> {
       await widget.controller.grade(currentWord, correct);
       if (!mounted) return;
 
+      if (advanceImmediately) {
+        _ui.mutate(() {
+          if (correct) correctCount++;
+          index++;
+          if (index < widget.words.length) _prepareQuestion();
+        });
+        return;
+      }
+
       _ui.mutate(() {
         result = correct;
         revealed = true;
         if (correct) correctCount++;
       });
 
-      if (widget.controller.autoSpeak) {
+      if (widget.controller.autoSpeak && widget.mode != QuizMode.flash) {
         await speak(currentWord);
       }
     } catch (error) {
@@ -353,7 +362,12 @@ class _QuizScreenState extends State<QuizScreen> {
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
-          onPressed: () => _ui.mutate(() => revealed = true),
+          onPressed: () async {
+            _ui.mutate(() => revealed = true);
+            if (widget.controller.autoSpeak) {
+              await speak(word);
+            }
+          },
           icon: Icon(Icons.visibility_outlined),
           label: const Text('정답 보기'),
         ),
@@ -384,14 +398,14 @@ class _QuizScreenState extends State<QuizScreen> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: saving ? null : () => grade(false),
+                onPressed: saving ? null : () => grade(false, advanceImmediately: true),
                 child: const Text('다시 볼게요'),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: FilledButton(
-                onPressed: saving ? null : () => grade(true),
+                onPressed: saving ? null : () => grade(true, advanceImmediately: true),
                 child: const Text('기억했어요'),
               ),
             ),
