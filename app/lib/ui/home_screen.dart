@@ -20,6 +20,7 @@ class _HomeUiController extends GetxController {
   String filter = '전체';
   String category = '전체';
   String studyScope = '오늘 복습';
+  final Set<String> studyCategories = <String>{};
   int quizSize = 10;
   bool quizActive = false;
   int wordPage = 1;
@@ -122,6 +123,72 @@ class _HomeScreenState extends State<HomeScreen> {
     input.dispose();
 
     return result;
+  }
+
+
+  Future<void> _selectMultipleStudyCategories(
+    List<String> categories,
+  ) async {
+    final selected = Set<String>.of(_ui.studyCategories);
+
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Center(
+          child: AlertDialog(
+          title: const Text('학습할 카테고리 선택'),
+          content: SizedBox(
+            width: 420,
+            child: categories.isEmpty
+                ? const Text('선택할 카테고리가 없습니다.')
+                : SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final value in categories)
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(value),
+                            value: selected.contains(value),
+                            onChanged: (checked) {
+                              setDialogState(() {
+                                if (checked == true) {
+                                  selected.add(value);
+                                } else {
+                                  selected.remove(value);
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, selected),
+              child: Text('선택 완료 (${selected.length})'),
+            ),
+          ],
+                  ),
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    _ui.mutate(() {
+      _ui.studyCategories
+        ..clear()
+        ..addAll(result);
+      studyScope = '복수 카테고리';
+    });
   }
 
   Future<void> edit([VocabWord? word]) async {
@@ -527,8 +594,11 @@ class _HomeScreenState extends State<HomeScreen> {
           wordPage = 1;
 
           if (category != '전체') {
+            _ui.studyCategories.clear();
             studyScope = '카테고리:$category';
-          } else if (studyScope.startsWith('카테고리:')) {
+          } else if (studyScope.startsWith('카테고리:') ||
+              studyScope == '복수 카테고리') {
+            _ui.studyCategories.clear();
             studyScope = '오늘 복습';
           }
         }),
@@ -850,6 +920,7 @@ class _HomeScreenState extends State<HomeScreen> {
             '전체',
             '즐겨찾기',
             '오답',
+            '복수 카테고리',
             ...categories.map((value) => '카테고리:$value'),
           ].contains(studyScope)
           ? studyScope
@@ -865,6 +936,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 '즐겨찾기',
                 '오답',
                 ...categories.map((value) => '카테고리:$value'),
+                '복수 카테고리',
               ]
               .map(
                 (value) => DropdownMenuItem(
@@ -872,15 +944,41 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Text(
                     value.startsWith('카테고리:')
                         ? value.substring('카테고리:'.length)
+                        : value == '복수 카테고리'
+                        ? _ui.studyCategories.isEmpty
+                              ? '복수 카테고리 선택...'
+                              : '복수 카테고리 (${_ui.studyCategories.length}개)'
                         : value,
                   ),
                 ),
               )
               .toList(),
-      onChanged: (value) => _ui.mutate(() {
-        studyScope = value ?? '오늘 복습';
-      }),
+      onChanged: (value) async {
+        if (value == '복수 카테고리') {
+          await _selectMultipleStudyCategories(categories);
+          return;
+        }
+
+        _ui.mutate(() {
+          studyScope = value ?? '오늘 복습';
+          _ui.studyCategories.clear();
+        });
+      },
     ),
+    if (studyScope == '복수 카테고리' &&
+        _ui.studyCategories.isNotEmpty) ...[
+      const SizedBox(height: 8),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          '선택: ${_ui.studyCategories.join(', ')}',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    ],
     const SizedBox(height: 10),
     DropdownButtonFormField<int>(
       initialValue: quizSize,
@@ -939,6 +1037,7 @@ class _HomeScreenState extends State<HomeScreen> {
         '오늘 복습' => c.due.any((due) => due.id == word.id),
         '즐겨찾기' => word.favorite,
         '오답' => c.wrongIds.contains(word.id),
+        '복수 카테고리' => _ui.studyCategories.contains(word.category),
         _ =>
           !studyScope.startsWith('카테고리:') ||
               word.category == studyScope.substring('카테고리:'.length),
