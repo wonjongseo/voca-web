@@ -68,6 +68,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   LeafyController get c => widget.controller;
 
+  String _studyCategorySummary(Iterable<String> values) {
+    final list = values.toList();
+    if (list.isEmpty) return '';
+    if (list.length == 1) return list.first;
+    return '${list.first} 외 ${list.length - 1}개';
+  }
+
+
   static const titles = ['나의 단어장', '오늘의 학습', '오답노트', '학습 기록', '계정과 설정'];
 
   static const subtitles = [
@@ -971,10 +979,10 @@ class _HomeScreenState extends State<HomeScreen> {
       Align(
         alignment: Alignment.centerLeft,
         child: Text(
-          '선택: ${_ui.studyCategories.join(', ')}',
-          style: TextStyle(
+          '선택된 카테고리 · ${_studyCategorySummary(_ui.studyCategories)}',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 12,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),

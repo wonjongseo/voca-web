@@ -1,9 +1,8 @@
 from pathlib import Path
-import re
 
 ROOT = Path.cwd()
 for p in [ROOT, *ROOT.parents]:
-    if (p / "web/app/page.tsx").exists() and (p / "web/app/globals.css").exists() and (p / "app/lib/ui/home_screen.dart").exists():
+    if (p / "web/app/page.tsx").exists() and (p / "web/app/globals.css").exists():
         ROOT = p
         break
 else:
@@ -12,140 +11,123 @@ else:
 page = ROOT / "web/app/page.tsx"
 s = page.read_text(encoding="utf-8")
 
-old_open = '''{multiCategoryDialogOpen&&<dialog open className="modal-shell multi-category-dialog" onCancel={()=>setMultiCategoryDialogOpen(false)}>
-      <div className="modal">'''
-new_open = '''{multiCategoryDialogOpen&&<div className="multi-category-overlay" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setMultiCategoryDialogOpen(false);}}>
-      <div className="modal multi-category-modal" role="dialog" aria-modal="true" aria-labelledby="multi-category-title">
-        <h2 id="multi-category-title">학습할 카테고리 선택</h2>'''
+# 필수 state 추가
+anchor = "  const [multiCategoryDialogOpen,setMultiCategoryDialogOpen] = useState(false);"
+if anchor not in s:
+    raise SystemExit("[ERROR] multiCategoryDialogOpen state를 찾지 못했습니다.")
 
-if new_open not in s:
-    if old_open not in s:
-        raise SystemExit("[ERROR] web/app/page.tsx: 복수 카테고리 dialog 시작 부분을 찾지 못했습니다.")
-    s = s.replace(old_open, new_open, 1)
+adds = []
+if "const [multiCategorySearch,setMultiCategorySearch]" not in s:
+    adds.append("  const [multiCategorySearch,setMultiCategorySearch] = useState('');")
+if "const [studyCategoryPresets,setStudyCategoryPresets]" not in s:
+    adds.append("  const [studyCategoryPresets,setStudyCategoryPresets] = useState<Record<string,string[]>>({});")
+if "const [studyPresetName,setStudyPresetName]" not in s:
+    adds.append("  const [studyPresetName,setStudyPresetName] = useState('');")
+if adds:
+    s = s.replace(anchor, anchor + "\n" + "\n".join(adds), 1)
 
+# summary helper
+if "const studyCategorySummary=" not in s:
+    helper = (
+        "  const studyCategorySummary=(values:string[])=>{\n"
+        "    if(!values.length)return '';\n"
+        "    if(values.length===1)return values[0];\n"
+        "    return `${values[0]} 외 ${values.length-1}개`;\n"
+        "  };\n\n"
+    )
+    a = "  const [studyCategories,setStudyCategories] = useState<string[]>([]);"
+    i = s.find(a)
+    if i == -1:
+        raise SystemExit("[ERROR] studyCategories state를 찾지 못했습니다.")
+    j = s.find("\n", i) + 1
+    s = s[:j] + helper + s[j:]
+
+# 화면 요약 간결화
 s = s.replace(
-    '''        <h2>학습할 카테고리 선택</h2>
-        <p className="muted">여러 카테고리를 동시에 선택할 수 있어요.</p>''',
-    '''        <p className="muted">여러 카테고리를 동시에 선택할 수 있어요.</p>''',
-    1,
+    "{scope==='categories'&&<span className=\"muted\">선택된 카테고리: {studyCategories.join(', ')}</span>}",
+    "{scope==='categories'&&studyCategories.length>0&&<span className=\"study-category-summary\">선택된 카테고리 · {studyCategorySummary(studyCategories)}</span>}",
 )
 
-old_close = '''      </div>
-    </dialog>}'''
-new_close = '''      </div>
-    </div>}'''
+# 기존 다이얼로그들 전부 제거: 첫 multiCategoryDialogOpen 렌더부터 footer 직전까지
+start_token = "{multiCategoryDialogOpen&&"
+footer_token = "    <footer><span>Leafy."
+start = s.find(start_token)
+footer = s.find(footer_token)
+if footer == -1:
+    raise SystemExit("[ERROR] footer를 찾지 못했습니다.")
+if start != -1 and start < footer:
+    s = s[:start] + s[footer:]
 
-if new_close not in s:
-    if old_close not in s:
-        raise SystemExit("[ERROR] web/app/page.tsx: 복수 카테고리 dialog 끝 부분을 찾지 못했습니다.")
-    s = s.replace(old_close, new_close, 1)
+dialog = (
+"    {multiCategoryDialogOpen&&<div className=\"multi-category-overlay\" role=\"presentation\" onMouseDown={e=>{if(e.target===e.currentTarget){setMultiCategorySearch('');setMultiCategoryDialogOpen(false);}}}>\n"
+"      <div className=\"modal multi-category-modal\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"multi-category-title\">\n"
+"        <h2 id=\"multi-category-title\">학습할 카테고리 선택</h2>\n"
+"        <p className=\"muted\">카테고리를 검색하거나 저장한 조합을 불러올 수 있어요.</p>\n"
+"\n"
+"        <label className=\"multi-category-search\">\n"
+"          <Search size={16}/>\n"
+"          <input autoFocus placeholder=\"카테고리 검색\" value={multiCategorySearch} onChange={e=>setMultiCategorySearch(e.target.value)}/>\n"
+"        </label>\n"
+"\n"
+"        <div className=\"category-list multi-category-list\">\n"
+"          {categoryNames.filter(category=>category.toLowerCase().includes(multiCategorySearch.trim().toLowerCase())).map(category=>{const checked=studyCategories.includes(category);return <label className=\"category-row\" key={category}><span><input type=\"checkbox\" checked={checked} onChange={e=>setStudyCategories(current=>e.target.checked?[...new Set([...current,category])]:current.filter(value=>value!==category))}/>{' '}{category}</span><span>{db.words.filter(w=>(w.category??'')===category).length}개</span></label>})}\n"
+"        </div>\n"
+"\n"
+"        <div className=\"multi-category-presets\">\n"
+"          <div className=\"multi-category-presets-head\"><strong>저장한 복수 선택</strong><span>{Object.keys(studyCategoryPresets).length}개</span></div>\n"
+"          {Object.entries(studyCategoryPresets).length?<div className=\"multi-category-preset-list\">{Object.entries(studyCategoryPresets).map(([name,categories])=><div className=\"multi-category-preset-row\" key={name}><button type=\"button\" className=\"multi-category-preset-load\" onClick={()=>setStudyCategories(categories)}><strong>{name}</strong><span>{studyCategorySummary(categories)}</span></button><button type=\"button\" className=\"button text-button\" disabled={!studyCategories.length} onClick={()=>setStudyCategoryPresets(current=>({...current,[name]:[...studyCategories]}))}>수정</button><button type=\"button\" className=\"button text-button danger\" onClick={()=>setStudyCategoryPresets(current=>{const next={...current};delete next[name];return next;})}>삭제</button></div>)}</div>:<p className=\"muted\">아직 저장한 복수 선택이 없어요.</p>}\n"
+"          <div className=\"multi-category-preset-save\"><input placeholder=\"새 조합 이름 (예: TOEIC 집중)\" value={studyPresetName} onChange={e=>setStudyPresetName(e.target.value)}/><button type=\"button\" className=\"button\" disabled={!studyPresetName.trim()||!studyCategories.length} onClick={()=>{const name=studyPresetName.trim();if(!name)return;setStudyCategoryPresets(current=>({...current,[name]:[...studyCategories]}));setStudyPresetName('');}}>현재 선택 저장</button></div>\n"
+"        </div>\n"
+"\n"
+"        <div className=\"modal-footer\">\n"
+"          <button type=\"button\" className=\"button\" onClick={()=>{setMultiCategorySearch('');setMultiCategoryDialogOpen(false);}}>취소</button>\n"
+"          <button type=\"button\" className=\"button primary\" disabled={!studyCategories.length} onClick={()=>{setScope('categories');setMultiCategorySearch('');setMultiCategoryDialogOpen(false);}}>선택 완료 ({studyCategories.length})</button>\n"
+"        </div>\n"
+"      </div>\n"
+"    </div>}\n"
+)
+
+footer = s.find(footer_token)
+s = s[:footer] + dialog + s[footer:]
+
+count = s.count("{multiCategoryDialogOpen&&")
+if count != 1:
+    raise SystemExit(f"[ERROR] 다이얼로그 렌더 블록이 {count}개 남았습니다.")
+if 'placeholder="카테고리 검색"' not in s:
+    raise SystemExit("[ERROR] 검색 입력란 삽입 실패")
 
 page.write_text(s, encoding="utf-8", newline="\n")
-print("[ok] web/app/page.tsx")
 
 css = ROOT / "web/app/globals.css"
 c = css.read_text(encoding="utf-8")
-
-styles = '''
-/* MULTI_CATEGORY_CENTERED_DIALOG_V1 */
-.multi-category-overlay{
-  position:fixed;
-  inset:0;
-  z-index:1000;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:24px;
-  background:rgba(33,52,43,.40);
-  backdrop-filter:blur(2px);
-}
-
-.multi-category-modal{
-  width:min(540px,calc(100vw - 32px));
-  max-height:calc(100dvh - 48px);
-  overflow:auto;
-  margin:0;
-  padding:30px;
-  border:1px solid #e0e7dd;
-  border-radius:8px;
-  color:#32412f;
-  background:#fff;
-  box-shadow:0 22px 85px rgba(21,45,50,.20);
-}
-
-.multi-category-modal h2{
-  margin:0 0 14px;
-}
-
-html[data-theme="dark"] .multi-category-modal{
-  background:var(--dark-surface);
-  color:var(--dark-text);
-  border-color:var(--dark-border);
-}
-
-@media(max-width:600px){
-  .multi-category-overlay{
-    padding:16px;
-  }
-
-  .multi-category-modal{
-    width:100%;
-    max-height:calc(100dvh - 32px);
-    padding:24px 20px;
-  }
-}
-'''
-
-if "MULTI_CATEGORY_CENTERED_DIALOG_V1" not in c:
-    c += "\n" + styles.strip() + "\n"
+if "/* MULTI_CATEGORY_CANONICAL_V3 */" not in c:
+    styles = (
+        "\n/* MULTI_CATEGORY_CANONICAL_V3 */\n"
+        ".multi-category-overlay{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(33,52,43,.42);backdrop-filter:blur(2px)}\n"
+        ".multi-category-modal{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 48px);overflow:auto;margin:0;padding:30px;border:1px solid #e0e7dd;border-radius:10px;background:#fff;color:#32412f;box-shadow:0 24px 90px rgba(21,45,50,.22);font-family:inherit}\n"
+        ".multi-category-modal *{font-family:inherit}\n"
+        ".multi-category-search{display:flex;align-items:center;gap:8px;margin:16px 0 12px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#fff}\n"
+        ".multi-category-search input{width:100%;border:0;outline:0;padding:11px 0;background:transparent;color:inherit}\n"
+        ".multi-category-list{max-height:220px;overflow:auto}\n"
+        ".multi-category-presets{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}\n"
+        ".multi-category-presets-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12px}\n"
+        ".multi-category-preset-list{display:grid;gap:7px}\n"
+        ".multi-category-preset-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px;padding:7px;border:1px solid var(--line);border-radius:6px}\n"
+        ".multi-category-preset-load{min-width:0;display:grid;gap:3px;padding:4px 6px;background:transparent;text-align:left}\n"
+        ".multi-category-preset-load span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}\n"
+        ".multi-category-preset-save{display:flex;gap:8px;margin-top:10px}\n"
+        ".multi-category-preset-save input{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:9px 10px}\n"
+        ".study-category-summary{display:inline-flex;align-items:center;min-height:38px;padding:0 10px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--muted);font-size:11px;font-weight:500;white-space:nowrap;font-family:inherit}\n"
+        "html[data-theme=\"dark\"] .multi-category-modal,html[data-theme=\"dark\"] .multi-category-search,html[data-theme=\"dark\"] .multi-category-preset-save input,html[data-theme=\"dark\"] .study-category-summary{background:var(--dark-surface);color:var(--dark-text);border-color:var(--dark-border)}\n"
+        "@media(max-width:600px){.multi-category-overlay{padding:16px}.multi-category-modal{width:100%;max-height:calc(100dvh - 32px);padding:24px 20px}.multi-category-preset-save{flex-direction:column}}\n"
+    )
+    c += styles
     css.write_text(c, encoding="utf-8", newline="\n")
-    print("[ok] web/app/globals.css")
-else:
-    print("[skip] web/app/globals.css 이미 적용됨")
 
-app = ROOT / "app/lib/ui/home_screen.dart"
-a = app.read_text(encoding="utf-8")
-
-old_builder = '''      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('학습할 카테고리 선택'),'''
-
-new_builder = '''      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Center(
-          child: AlertDialog(
-          title: const Text('학습할 카테고리 선택'),'''
-
-if new_builder not in a:
-    if old_builder not in a:
-        raise SystemExit("[ERROR] app/lib/ui/home_screen.dart: 복수 카테고리 AlertDialog 시작 부분을 찾지 못했습니다.")
-    a = a.replace(old_builder, new_builder, 1)
-
-pattern = re.compile(
-    r"""(child: Text\('선택 완료 \(\$\{selected\.length\}\)'\),\s*\),\s*\],\s*)\),\s*\),\s*\);""",
-    re.MULTILINE,
-)
-replacement = r"""\1          ),
-        ),
-      ),
-    );"""
-
-a2, count = pattern.subn(replacement, a, count=1)
-if count > 0:
-    a = a2
-elif "builder: (context, setDialogState) => Center(" not in a:
-    raise SystemExit("[ERROR] app/lib/ui/home_screen.dart: AlertDialog 닫기 부분을 찾지 못했습니다.")
-
-app.write_text(a, encoding="utf-8", newline="\n")
-print("[ok] app/lib/ui/home_screen.dart")
-
-print("\n완료")
-print("- Web: 화면 중앙 fixed overlay")
-print("- Web: 바깥 영역 클릭 시 닫힘")
-print("- App: AlertDialog를 Center로 명시")
+print("[ok] Web 복수 카테고리 다이얼로그를 단일 canonical 블록으로 재작성")
+print("[ok] 검색란 확인")
+print("[ok] 중앙 overlay 확인")
+print("[ok] 선택 요약 a 외 N개 유지")
 print("\n검증:")
-print("  cd app")
-print("  dart format lib/ui/home_screen.dart")
-print("  flutter analyze")
-print("")
-print("  cd ../web")
+print("  cd web")
 print("  npm run build")
